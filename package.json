@@ -1,0 +1,35 @@
+{
+  "name": "la-nostra-citta-il-nostro-futuro",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Piattaforma web civica per segnalazioni e proposte dei cittadini di Milano.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "node --watch server/src/server.js",
+    "start": "node server/src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "node --check server/src/server.js && node --check client/js/app.js"
+  },
+  "dependencies": {
+    "argon2": "^0.41.1",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.18.1",
+    "file-type": "^22.1.1",
+    "helmet": "^8.1.0",
+    "multer": "^2.4.0",
+    "mysql2": "^3.14.0",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0",
+    "vitest": "^5.0.2"
+  }
+}

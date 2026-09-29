@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Segnalazioni, proposte e priorità dei quartieri di Milano.">
+  <meta name="theme-color" content="#176b5b">
+  <title>La Nostra Città, Il Nostro Futuro</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#contenuto">Vai al contenuto principale</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#home" aria-label="La Nostra Città - homepage">
+        <span class="brand-mark" aria-hidden="true">NC</span>
+        <span>
+          <strong>La Nostra Città</strong>
+          <small>Il Nostro Futuro</small>
+        </span>
+      </a>
+
+      <button class="menu-button" id="menu-button" type="button" aria-expanded="false" aria-controls="main-nav">
+        <span aria-hidden="true">☰</span><span class="sr-only">Apri menu</span>
+      </button>
+
+      <nav class="main-nav" id="main-nav" aria-label="Navigazione principale">
+        <a href="#home">Segnalazioni</a>
+        <a href="#new" data-auth-only>Nuova segnalazione</a>
+        <a href="#profile" data-auth-only>Profilo</a>
+        <a href="#moderation" data-moderator-only>Moderazione</a>
+        <a href="#login" data-guest-only>Accedi</a>
+        <button class="button button-small button-ghost" id="logout-button" type="button" data-auth-only>Esci</button>
+      </nav>
+    </div>
+  </header>
+
+  <aside class="accessibility-bar" aria-label="Strumenti di accessibilità">
+    <button id="contrast-button" type="button" aria-pressed="false">Alto contrasto</button>
+    <button id="font-button" type="button" aria-pressed="false">Testo grande</button>
+    <button id="speech-button" type="button">Leggi la pagina</button>
+  </aside>
+
+  <main id="contenuto" tabindex="-1">
+    <div id="app" aria-live="polite">
+      <div class="loading" role="status">Caricamento…</div>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <footer class="site-footer">
+    <div>
+      <strong>Insieme per Milano</strong>
+      <p>Una piattaforma civica per trasformare i problemi in proposte condivise.</p>
+    </div>
+    <a href="#accessibility">Accessibilità e privacy</a>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
