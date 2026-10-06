@@ -1,0 +1,2 @@
+"""Backend Flask dell'applicazione."""
+

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Segnalazioni e proposte per migliorare la città.">
+  <title>La Nostra Città, Il Nostro Futuro</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">La Nostra Città</a>
+    <span class="tagline">Il Nostro Futuro</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Partecipazione civica</p>
+        <h1>Miglioriamo insieme la nostra città</h1>
+        <p>Consulta le segnalazioni dei cittadini oppure proponi una nuova idea.</p>
+      </div>
+      <a class="button" href="#nuova-segnalazione">Nuova segnalazione</a>
+    </section>
+
+    <section class="panel" aria-labelledby="segnalazioni-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Bacheca pubblica</p>
+          <h2 id="segnalazioni-title">Segnalazioni e proposte</h2>
+        </div>
+        <label class="search">
+          <span>Cerca</span>
+          <input id="search-input" type="search" placeholder="Titolo, descrizione o luogo">
+        </label>
+      </div>
+
+      <p id="list-status" class="status" role="status">Caricamento…</p>
+      <div id="report-list" class="report-grid"></div>
+    </section>
+
+    <section id="nuova-segnalazione" class="panel form-panel" aria-labelledby="form-title">
+      <div>
+        <p class="eyebrow">Partecipa</p>
+        <h2 id="form-title">Pubblica un contenuto</h2>
+        <p>In modalità demo i dati restano in memoria. Con Aiven vengono salvati nel database.</p>
+      </div>
+
+      <form id="report-form">
+        <div class="form-row">
+          <label>
+            Tipo
+            <select name="tipo" required>
+              <option value="segnalazione">Segnalazione</option>
+              <option value="proposta">Proposta</option>
+            </select>
+          </label>
+          <label>
+            ID autore
+            <input name="id_autore" type="number" min="1" value="1" required>
+          </label>
+        </div>
+
+        <label>
+          Titolo
+          <input name="titolo" minlength="3" maxlength="200" required>
+        </label>
+
+        <label>
+          Descrizione
+          <textarea name="descrizione" minlength="10" maxlength="5000" rows="5" required></textarea>
+        </label>
+
+        <label>
+          Indirizzo
+          <input name="indirizzo" maxlength="255" placeholder="Facoltativo">
+        </label>
+
+        <button class="button" type="submit">Pubblica</button>
+        <p id="form-status" class="status" role="status"></p>
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    <p>Progetto scolastico — La Nostra Città, Il Nostro Futuro</p>
+  </footer>
+
+  <script src="/js/app.js" defer></script>
+</body>
+</html>
+

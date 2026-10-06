@@ -1,0 +1,248 @@
+:root {
+  color-scheme: light;
+  --background: #f4f7f5;
+  --surface: #ffffff;
+  --text: #16231c;
+  --muted: #5c6b62;
+  --primary: #176b45;
+  --primary-dark: #0f4d32;
+  --accent: #e4f2ea;
+  --border: #d6e0da;
+  --shadow: 0 14px 36px rgba(22, 35, 28, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.55;
+}
+
+.site-header,
+main,
+footer {
+  width: min(1120px, calc(100% - 32px));
+  margin-inline: auto;
+}
+
+.site-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-block: 24px;
+}
+
+.brand {
+  color: var(--primary-dark);
+  font-size: 1.15rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.tagline,
+.status,
+.report-meta,
+footer {
+  color: var(--muted);
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 32px;
+  align-items: end;
+  padding: clamp(32px, 6vw, 72px);
+  border-radius: 28px;
+  background: linear-gradient(135deg, #dff1e7, #f8fbf9);
+  box-shadow: var(--shadow);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  max-width: 760px;
+  margin-bottom: 16px;
+  font-size: clamp(2.2rem, 6vw, 4.7rem);
+  line-height: 1.02;
+  letter-spacing: -0.05em;
+}
+
+h2 {
+  margin-bottom: 8px;
+  font-size: clamp(1.6rem, 3vw, 2.3rem);
+}
+
+.eyebrow {
+  margin-bottom: 8px;
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 11px 20px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--primary);
+  color: white;
+  font: inherit;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover,
+.button:focus-visible {
+  background: var(--primary-dark);
+}
+
+.panel {
+  margin-top: 28px;
+  padding: clamp(24px, 4vw, 42px);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--surface);
+}
+
+.section-heading,
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.section-heading {
+  align-items: end;
+  margin-bottom: 24px;
+}
+
+.search {
+  max-width: 420px;
+  justify-self: end;
+}
+
+label {
+  display: grid;
+  gap: 7px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+  padding: 11px 12px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 3px solid rgba(23, 107, 69, 0.18);
+  border-color: var(--primary);
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.report-card {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fbfdfc;
+}
+
+.report-card h3 {
+  margin-bottom: 8px;
+}
+
+.badge {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--primary-dark);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 16px 0 0;
+  font-size: 0.9rem;
+}
+
+.form-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(300px, 1.3fr);
+  gap: clamp(28px, 6vw, 72px);
+}
+
+form {
+  display: grid;
+  gap: 18px;
+}
+
+footer {
+  padding-block: 34px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .hero,
+  .section-heading,
+  .form-panel,
+  .form-row,
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    align-items: start;
+  }
+
+  .search {
+    max-width: none;
+    justify-self: stretch;
+  }
+
+  .site-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
