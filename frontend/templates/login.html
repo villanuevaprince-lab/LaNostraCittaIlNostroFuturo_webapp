@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_forms.html" import field, error_summary %}
+{% block title %}Accedi — La Nostra Città{% endblock %}
+{% block content %}
+  <section class="panel auth-panel" aria-labelledby="login-title">
+    <p class="eyebrow">Bentornato</p>
+    <h1 id="login-title" class="page-title">Accedi</h1>
+    <p>Accedi con la tua email per pubblicare segnalazioni e proposte.</p>
+    {{ error_summary(form, error) }}
+    <form method="post" action="{{ url_for('auth.login') }}" data-submit-form>
+      {{ form.hidden_tag() }}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      {{ field(form.email, type='email', autocomplete='email', maxlength=254, required=true) }}
+      {{ field(form.password, autocomplete='current-password', maxlength=128, required=true) }}
+      <button class="button" type="submit" data-busy-label="Accesso in corso…">Accedi</button>
+    </form>
+    <p class="auth-note">Non hai un account? <a href="{{ url_for('auth.register', next=next_url) }}">Registrati</a></p>
+  </section>
+{% endblock %}

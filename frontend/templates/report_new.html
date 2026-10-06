@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_forms.html" import field, error_summary %}
+{% block title %}Nuova segnalazione — La Nostra Città{% endblock %}
+{% block content %}
+  <a class="back-link" href="/">← Torna alla bacheca</a>
+  <section class="panel form-panel" aria-labelledby="report-title">
+    <div>
+      <p class="eyebrow">Il tuo contributo</p>
+      <h1 id="report-title" class="page-title">Nuova segnalazione</h1>
+      <p>Descrivi il problema o proponi un miglioramento. Dopo l'invio tornerai alla bacheca.</p>
+      <p>Pubblicherai come <strong>{{ g.user.nome }} {{ g.user.cognome }}</strong>.</p>
+      <p class="mode-note">Non inserire password o dati sensibili: il contenuto sarà pubblico.</p>
+    </div>
+    <div>
+      {{ error_summary(form) }}
+      <form id="report-form" method="post" action="{{ url_for('reports.new_report') }}" data-submit-form>
+        {{ form.hidden_tag() }}
+        {{ field(form.tipo, required=true) }}
+        {{ field(form.titolo, minlength=3, maxlength=200, required=true) }}
+        {{ field(form.descrizione, minlength=10, maxlength=5000, rows=6, required=true) }}
+        {{ field(form.indirizzo, maxlength=255, autocomplete='street-address') }}
+        <button class="button" type="submit" data-busy-label="Pubblicazione in corso…">Pubblica</button>
+        <a class="back-link" href="/">Annulla e torna alla home</a>
+      </form>
+    </div>
+  </section>
+{% endblock %}

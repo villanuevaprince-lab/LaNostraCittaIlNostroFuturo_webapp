@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_forms.html" import field, error_summary %}
+{% block title %}Registrati — La Nostra Città{% endblock %}
+{% block content %}
+  <section class="panel auth-panel" aria-labelledby="register-title">
+    <p class="eyebrow">Partecipa alla comunità</p>
+    <h1 id="register-title" class="page-title">Crea il tuo account</h1>
+    <p>Dopo la registrazione accederai automaticamente. Tutti i campi sono obbligatori.</p>
+    {{ error_summary(form) }}
+    <form method="post" action="{{ url_for('auth.register') }}" data-submit-form>
+      {{ form.hidden_tag() }}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <div class="form-row">
+        {{ field(form.nome, autocomplete='given-name', maxlength=100, required=true) }}
+        {{ field(form.cognome, autocomplete='family-name', maxlength=100, required=true) }}
+      </div>
+      {{ field(form.email, type='email', autocomplete='email', maxlength=254, required=true) }}
+      <p class="mode-note">Scegli una password da 12 a 128 caratteri. È consentito incollarla da un gestore di password.</p>
+      {{ field(form.password, autocomplete='new-password', minlength=12, maxlength=128, required=true) }}
+      {{ field(form.password_confirm, autocomplete='new-password', minlength=12, maxlength=128, required=true) }}
+      <button class="button" type="submit" data-busy-label="Registrazione in corso…">Registrati</button>
+    </form>
+    <p class="auth-note">Hai già un account? <a href="{{ url_for('auth.login', next=next_url) }}">Accedi</a></p>
+  </section>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/home.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Partecipazione civica</p>
+      <h1>Miglioriamo insieme la nostra città</h1>
+      <p>Consulta le segnalazioni dei cittadini oppure proponi una nuova idea.</p>
+    </div>
+    <a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
+  </section>
+  <section class="panel" aria-labelledby="segnalazioni-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Bacheca pubblica</p>
+        <h2 id="segnalazioni-title">Segnalazioni e proposte</h2>
+      </div>
+      <label class="search" for="search-input">Cerca
+        <input id="search-input" type="search" maxlength="200" placeholder="Titolo, descrizione o luogo">
+      </label>
+    </div>
+    <p id="list-status" class="status" role="status">Caricamento…</p>
+    <div id="report-list" class="report-grid"></div>
+    <noscript>Attiva JavaScript per visualizzare la bacheca. Login e pubblicazione funzionano anche senza JavaScript.</noscript>
+  </section>
+{% endblock %}

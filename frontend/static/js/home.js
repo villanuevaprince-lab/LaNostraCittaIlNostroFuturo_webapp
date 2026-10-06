@@ -1,17 +1,22 @@
 const reportList = document.querySelector("#report-list");
 const listStatus = document.querySelector("#list-status");
 const searchInput = document.querySelector("#search-input");
-const reportForm = document.querySelector("#report-form");
-const formStatus = document.querySelector("#form-status");
 
 let searchTimer;
+let pendingRequest;
 
 async function loadReports(search = "") {
+  pendingRequest?.abort();
+  const controller = new AbortController();
+  pendingRequest = controller;
   listStatus.textContent = "Caricamento…";
   reportList.replaceChildren();
 
   try {
-    const response = await fetch(`/api/segnalazioni?q=${encodeURIComponent(search)}`);
+    const response = await fetch(`/api/segnalazioni?q=${encodeURIComponent(search)}`, {
+      signal: controller.signal,
+      credentials: "same-origin",
+    });
     if (!response.ok) throw new Error("Impossibile caricare le segnalazioni.");
 
     const reports = await response.json();
@@ -20,6 +25,7 @@ async function loadReports(search = "") {
       ? `${reports.length} contenuti trovati`
       : "Nessun contenuto trovato.";
   } catch (error) {
+    if (error.name === "AbortError") return;
     listStatus.textContent = error.message;
   }
 }
@@ -63,34 +69,4 @@ searchInput.addEventListener("input", () => {
   searchTimer = setTimeout(() => loadReports(searchInput.value.trim()), 250);
 });
 
-reportForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  formStatus.textContent = "Pubblicazione in corso…";
-
-  const values = Object.fromEntries(new FormData(reportForm).entries());
-  values.id_autore = Number(values.id_autore);
-
-  try {
-    const response = await fetch("/api/segnalazioni", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(values),
-    });
-    const result = await response.json();
-
-    if (!response.ok) {
-      const fieldErrors = Object.values(result.fields || {}).join(" ");
-      throw new Error(fieldErrors || result.error || "Pubblicazione non riuscita.");
-    }
-
-    reportForm.reset();
-    reportForm.elements.id_autore.value = 1;
-    formStatus.textContent = "Contenuto pubblicato correttamente.";
-    await loadReports(searchInput.value.trim());
-  } catch (error) {
-    formStatus.textContent = error.message;
-  }
-});
-
 loadReports();
-

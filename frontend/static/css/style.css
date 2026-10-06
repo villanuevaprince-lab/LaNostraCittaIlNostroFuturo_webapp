@@ -16,7 +16,7 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 body {
@@ -39,6 +39,8 @@ footer {
   align-items: baseline;
   justify-content: space-between;
   padding-block: 24px;
+  gap: 20px;
+  flex-wrap: wrap;
 }
 
 .brand {
@@ -179,6 +181,7 @@ textarea:focus {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: #fbfdfc;
+  overflow-wrap: anywhere;
 }
 
 .report-card h3 {
@@ -221,6 +224,39 @@ footer {
   text-align: center;
 }
 
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+nav a, .back-link, .auth-note a {
+  color: var(--primary-dark);
+}
+
+.brand-group { display: grid; }
+.nav-user { max-width: 180px; overflow-wrap: anywhere; }
+.inline-form { display: inline; }
+.button-secondary { background: #e4f2ea; color: var(--primary-dark); }
+.button-secondary:hover, .button-secondary:focus-visible { color: white; }
+.button:disabled { opacity: 0.65; cursor: wait; }
+.button-link { border: 0; background: none; color: var(--primary-dark); font: inherit; text-decoration: underline; cursor: pointer; padding: 10px 0; }
+.page-title { font-size: clamp(2rem, 4vw, 3rem); line-height: 1.15; }
+.auth-panel { max-width: 600px; margin: 24px auto; }
+.auth-note { margin-top: 20px; margin-bottom: 0; }
+.field { display: grid; gap: 7px; }
+.field-errors { margin: 0; padding: 0; list-style: none; color: #a51e2c; font-size: 0.9rem; }
+.field:has(.field-errors li) input, .field:has(.field-errors li) textarea, .field:has(.field-errors li) select { border-color: #a51e2c; }
+.notice { border: 1px solid var(--border); background: #fff; border-radius: 12px; padding: 14px 18px; margin: 12px 0 20px; }
+.notice-success { border-color: #83b59a; background: #edf8f1; }
+.notice-error { border-color: #c8606b; background: #fff3f4; color: #7d1320; }
+.mode-note { color: var(--muted); font-size: 0.9rem; }
+.skip-link { position: absolute; top: -100px; left: 16px; padding: 12px; background: #fff; z-index: 10; }
+.skip-link:focus { top: 12px; }
+:focus-visible { outline: 3px solid #176b45; outline-offset: 3px; }
+textarea { resize: vertical; }
+
 @media (max-width: 760px) {
   .hero,
   .section-heading,
@@ -245,4 +281,3 @@ footer {
     gap: 2px;
   }
 }
-

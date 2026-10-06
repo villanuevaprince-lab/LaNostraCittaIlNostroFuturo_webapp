@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Errore {{ status }} — La Nostra Città{% endblock %}
+{% block content %}
+  <section class="panel auth-panel">
+    <h1 class="page-title">Richiesta non riuscita</h1>
+    <p role="alert">{{ message }}</p>
+    <p>Torna alla bacheca per aprire un nuovo modulo.</p>
+    <a class="button" href="/">Torna alla home</a>
+  </section>
+{% endblock %}

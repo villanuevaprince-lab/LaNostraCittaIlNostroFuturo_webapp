@@ -1,107 +1,115 @@
+"""Application factory: configurazione ed estensioni, senza logica delle pagine."""
+
 import os
-from pathlib import Path
+import secrets
+from datetime import timedelta
 
 import mysql.connector
-from flask import Flask, jsonify, request, send_from_directory
-from flask_cors import CORS
+from dotenv import load_dotenv
+from flask import Flask, jsonify, render_template, request
+from flask_wtf.csrf import CSRFError
+from werkzeug.exceptions import HTTPException
+from werkzeug.security import generate_password_hash
 
-from backend.database import create_report, database_enabled, list_reports
+from backend.database import ROOT_DIR, init_demo_store
+from backend.security import csrf, limiter, load_current_user
 
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-FRONTEND_DIR = ROOT_DIR / "frontend"
-
-
-def create_app():
+def create_app(test_config=None):
+    load_dotenv(ROOT_DIR / ".env")
     app = Flask(
         __name__,
-        static_folder=str(FRONTEND_DIR),
-        static_url_path="",
+        template_folder=str(ROOT_DIR / "frontend" / "templates"),
+        static_folder=str(ROOT_DIR / "frontend" / "static"),
+        static_url_path="/static",
     )
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    app.config.from_mapping(
+        APP_MODE=os.getenv("APP_MODE", "demo"),
+        SECRET_KEY=os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET"),
+        SESSION_COOKIE_NAME="nostra_citta_session",
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true",
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=2),
+        SESSION_REFRESH_EACH_REQUEST=False,
+        WTF_CSRF_TIME_LIMIT=3600,
+        MAX_CONTENT_LENGTH=64 * 1024,
+        RATELIMIT_STORAGE_URI=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
+        RATELIMIT_HEADERS_ENABLED=True,
+    )
+    if test_config:
+        app.config.update(test_config)
+    if app.config["APP_MODE"] not in {"demo", "database"}:
+        raise RuntimeError("APP_MODE deve essere demo oppure database.")
 
-    @app.get("/")
-    def index():
-        return send_from_directory(FRONTEND_DIR, "index.html")
+    secret = app.config["SECRET_KEY"]
+    if not secret:
+        if app.config["APP_MODE"] == "database":
+            raise RuntimeError("Imposta SECRET_KEY nel file .env (almeno 32 caratteri casuali).")
+        # Solo demo: chiave effimera; al riavvio le sessioni non sono più valide.
+        app.config["SECRET_KEY"] = secrets.token_hex(32)
+    elif len(secret) < 32 or secret.startswith("replace-with"):
+        raise RuntimeError("SECRET_KEY deve contenere almeno 32 caratteri casuali.")
 
-    @app.get("/api/health")
-    def health():
-        return jsonify(
-            {
-                "status": "ok",
-                "database": "aiven" if database_enabled() else "demo",
-            }
-        )
+    init_demo_store(app)
+    # Un hash fittizio rende simile il costo del login anche per email inesistenti.
+    app.extensions["dummy_password_hash"] = generate_password_hash(secrets.token_urlsafe(32))
+    app.before_request(load_current_user)
+    csrf.init_app(app)
+    limiter.init_app(app)
 
-    @app.get("/api/segnalazioni")
-    def get_reports():
-        search = request.args.get("q", "").strip()
-        return jsonify(list_reports(search))
+    from backend.auth import auth
+    from backend.pages import pages
+    from backend.reports import reports
 
-    @app.post("/api/segnalazioni")
-    def post_report():
-        data = request.get_json(silent=True) or {}
-        errors = validate_report(data)
+    app.register_blueprint(auth)
+    app.register_blueprint(pages)
+    app.register_blueprint(reports)
 
-        if errors:
-            return jsonify({"error": "Dati non validi", "fields": errors}), 400
+    def error_response(message, status):
+        if request.path.startswith("/api/"):
+            return jsonify(error=message), status
+        return render_template("error.html", message=message, status=status), status
 
-        report = create_report(
-            {
-                "id_autore": int(data["id_autore"]),
-                "tipo": data["tipo"].strip().lower(),
-                "titolo": data["titolo"].strip(),
-                "descrizione": data["descrizione"].strip(),
-                "indirizzo": data.get("indirizzo", "").strip(),
-            }
-        )
-        return jsonify(report), 201
+    @app.errorhandler(CSRFError)
+    def csrf_error(error):
+        return error_response("Il modulo è scaduto o non è valido. Ricarica la pagina e riprova.", 400)
 
     @app.errorhandler(mysql.connector.Error)
     def database_error(error):
-        app.logger.error("Errore MySQL: %s", error)
-        return (
-            jsonify(
-                {
-                    "error": "Database non disponibile",
-                    "detail": "Controlla le variabili Aiven nel file .env.",
-                }
-            ),
-            503,
+        # Niente password, query o dati dell'utente nei messaggi di errore.
+        app.logger.error("Errore MySQL (codice %s)", error.errno)
+        return error_response("Database non disponibile. Riprova più tardi.", 503)
+
+    @app.errorhandler(HTTPException)
+    def http_error(error):
+        messages = {
+            400: "Richiesta non valida.",
+            404: "Pagina non trovata.",
+            405: "Metodo non consentito.",
+            413: "Il contenuto inviato è troppo grande.",
+            429: "Troppi tentativi. Attendi prima di riprovare.",
+        }
+        return error_response(messages.get(error.code, "Richiesta non riuscita."), error.code)
+
+    @app.after_request
+    def security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
         )
+        if request.endpoint != "static":
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     return app
 
 
-def validate_report(data):
-    errors = {}
-    tipo = str(data.get("tipo", "")).strip().lower()
-    titolo = str(data.get("titolo", "")).strip()
-    descrizione = str(data.get("descrizione", "")).strip()
-
-    if tipo not in {"segnalazione", "proposta"}:
-        errors["tipo"] = "Scegli segnalazione o proposta."
-    if not 3 <= len(titolo) <= 200:
-        errors["titolo"] = "Il titolo deve contenere da 3 a 200 caratteri."
-    if not 10 <= len(descrizione) <= 5000:
-        errors["descrizione"] = "La descrizione deve contenere almeno 10 caratteri."
-
-    try:
-        if int(data.get("id_autore", 0)) <= 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        errors["id_autore"] = "Inserisci un ID utente valido."
-
-    return errors
-
-
-app = create_app()
-
-
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
+    create_app().run(
+        host=os.getenv("HOST", "127.0.0.1"),
         port=int(os.getenv("PORT", "5000")),
-        debug=os.getenv("FLASK_DEBUG", "1") == "1",
+        debug=os.getenv("FLASK_DEBUG", "0") == "1",
     )
-
