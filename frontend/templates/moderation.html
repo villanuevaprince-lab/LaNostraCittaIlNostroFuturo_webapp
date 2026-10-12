@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Moderazione — La Nostra Città{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/moderation.js') }}" defer></script>{% endblock %}
+{% block content %}
+  <section class="hero"><div><p class="eyebrow">Comitato cittadino</p><h1>Moderazione</h1>
+    <p>Le API verificano il ruolo di moderatore prima di ogni modifica.</p></div></section>
+  <section class="panel"><h2>Segnalazioni pubbliche</h2><p id="moderation-status" class="status" role="status"></p>
+    <div id="moderation-reports" class="report-grid"></div></section>
+  <section class="panel"><h2>Account attivi</h2><div id="moderation-users"></div></section>
+{% endblock %}

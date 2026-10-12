@@ -240,12 +240,21 @@ nav a, .back-link, .auth-note a {
 .inline-form { display: inline; }
 .button-secondary { background: #e4f2ea; color: var(--primary-dark); }
 .button-secondary:hover, .button-secondary:focus-visible { color: white; }
+.button-danger { background: #a51e2c; }
+.button-danger:hover, .button-danger:focus-visible { background: #7d1320; }
 .button:disabled { opacity: 0.65; cursor: wait; }
 .button-link { border: 0; background: none; color: var(--primary-dark); font: inherit; text-decoration: underline; cursor: pointer; padding: 10px 0; }
 .page-title { font-size: clamp(2rem, 4vw, 3rem); line-height: 1.15; }
 .auth-panel { max-width: 600px; margin: 24px auto; }
 .auth-note { margin-top: 20px; margin-bottom: 0; }
 .field { display: grid; gap: 7px; }
+.filter-row { margin-bottom: 18px; }
+.report-image { display: block; max-width: 100%; max-height: 320px; object-fit: contain; border-radius: 12px; margin-block: 14px; }
+.report-card details { margin-top: 14px; }
+.report-card summary { cursor: pointer; font-weight: 700; }
+.report-card details form { margin-top: 14px; }
+.report-card details textarea { min-height: 80px; }
+.report-card > select { margin-block: 10px; }
 .field-errors { margin: 0; padding: 0; list-style: none; color: #a51e2c; font-size: 0.9rem; }
 .field:has(.field-errors li) input, .field:has(.field-errors li) textarea, .field:has(.field-errors li) select { border-color: #a51e2c; }
 .notice { border: 1px solid var(--border); background: #fff; border-radius: 12px; padding: 14px 18px; margin: 12px 0 20px; }

@@ -3,7 +3,6 @@ import time
 
 import pytest
 from argon2 import PasswordHasher
-from werkzeug.security import check_password_hash
 
 from backend.app import create_app
 from conftest import csrf_token
@@ -15,7 +14,8 @@ def test_register_hashes_password_and_starts_session(app, client, submit, regist
     user = next(iter(app.extensions["demo_store"]["users"].values()))
     assert user["email"] == "marco@example.com"
     assert user["hash_password"] != registration["password"]
-    assert check_password_hash(user["hash_password"], registration["password"])
+    assert user["hash_password"].startswith("$argon2id$")
+    assert PasswordHasher().verify(user["hash_password"], registration["password"])
     with client.session_transaction() as session:
         assert session["user_id"] == user["id"]
         assert "password" not in session and "email" not in session

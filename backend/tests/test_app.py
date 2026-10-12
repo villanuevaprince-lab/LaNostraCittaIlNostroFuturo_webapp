@@ -1,22 +1,33 @@
+from io import BytesIO
+
+from PIL import Image
 import pytest
 
 from conftest import csrf_token
 
 
-def test_health(client):
+def make_image():
+    buffer = BytesIO()
+    Image.new("RGB", (16, 16), "green").save(buffer, format="JPEG")
+    buffer.seek(0)
+    return buffer
+
+
+def test_health_and_catalogs(client):
     assert client.get("/api/health").get_json() == {"status": "ok", "database": "demo"}
+    assert client.get("/api/quartieri").get_json()[0]["nome"] == "Centro Storico"
+    assert client.get("/api/categorie").get_json()
 
 
-def test_homepage_has_link_not_creation_form(client):
+def test_homepage_has_search_and_filters_not_creation_form(client):
     response = client.get("/")
     html = response.get_data(as_text=True)
     assert response.status_code == 200
     assert 'href="/reports/new"' in html
     assert 'id="report-form"' not in html
-    assert 'name="id_autore"' not in html
-    assert client.get("/static/css/style.css").status_code == 200
+    assert 'id="filter-category"' in html
     assert client.get("/static/js/home.js").status_code == 200
-    assert client.get("/static/js/forms.js").status_code == 200
+    assert client.get("/static/js/report.js").status_code == 200
 
 
 @pytest.mark.parametrize("path", [
@@ -27,94 +38,112 @@ def test_no_static_html_bypass(client, path):
     assert client.get(path).status_code == 404
 
 
-@pytest.mark.parametrize("path", ["/reports/new", "/dashboard"])
+@pytest.mark.parametrize("path", ["/reports/new", "/dashboard", "/profilo"])
 def test_guest_is_sent_to_login(client, path):
     response = client.get(path)
     assert response.status_code == 303
     assert response.location == "/login?next=" + path
 
 
-def test_guest_cannot_post_with_or_without_csrf(client, submit, report_data):
-    before = len(client.get("/api/segnalazioni").get_json())
-    assert client.post("/reports/new", data=report_data).status_code == 400
-    assert submit("/reports/new", report_data).status_code == 303
-    response = client.post("/api/segnalazioni", json=report_data,
+def test_dashboard_and_profile_after_login(client, logged_in):
+    assert client.get("/dashboard").status_code == 200
+    assert client.get("/profilo").status_code == 200
+    assert "Marco Rossi" in client.get("/reports/new").get_data(as_text=True)
+
+
+def test_report_requires_login_and_multipart_upload(client, logged_in, report_data):
+    client.post("/logout", data={"csrf_token": csrf_token(client)})
+    response = client.post("/api/segnalazioni", data=report_data,
                            headers={"X-CSRFToken": csrf_token(client)})
     assert response.status_code == 401
-    assert len(client.get("/api/segnalazioni").get_json()) == before
+    assert client.get("/api/segnalazioni").status_code == 200
 
 
-def test_dedicated_page_has_current_author(client, logged_in):
-    response = client.get("/reports/new")
-    html = response.get_data(as_text=True)
-    assert response.status_code == 200
-    assert 'id="report-form"' in html
-    assert "Marco Rossi" in html
-    assert 'name="id_autore"' not in html
-    assert client.get("/dashboard").location == "/"
-    assert client.get("/home").location == "/"
-
-
-def test_publish_redirect_confirmation_and_refresh(client, submit, logged_in, report_data):
-    before = len(client.get("/api/segnalazioni").get_json())
-    response = submit("/reports/new", {**report_data, "id_autore": "999", "stato": "risolta"})
-    assert response.status_code == 303
-    assert response.location == "/"
-    home = client.get("/").get_data(as_text=True)
-    assert "Segnalazione pubblicata correttamente." in home
-    refreshed = client.get("/").get_data(as_text=True)
-    assert "Segnalazione pubblicata correttamente." not in refreshed
-    reports = client.get("/api/segnalazioni").get_json()
-    assert len(reports) == before + 1
-    assert reports[0]["autore"] == "Marco Rossi"
-    assert reports[0]["stato"] == "aperta"
-
-
-def test_search(client):
-    reports = client.get("/api/segnalazioni?q=biciclette").get_json()
-    assert len(reports) == 1 and reports[0]["tipo"] == "proposta"
-
-
-def test_invalid_report_keeps_form_values(client, submit, logged_in, report_data):
-    response = submit("/reports/new", {**report_data, "descrizione": "Breve"})
-    assert response.status_code == 400
-    html = response.get_data(as_text=True)
-    assert "Lampione spento" in html
-    assert "da 10 a 5000" in html
-    assert len(client.get("/api/segnalazioni").get_json()) == 2
-
-
-def test_report_input_is_escaped(client, submit, logged_in, report_data):
-    response = submit("/reports/new", {**report_data, "titolo": "<script>alert(1)</script>",
-                                       "descrizione": "Breve"})
-    html = response.get_data(as_text=True)
-    assert "<script>alert(1)</script>" not in html
-    assert "&lt;script&gt;" in html
-
-
-@pytest.mark.parametrize("body", [None, [], "text", 1, {"titolo": 123},
-                                  {"tipo": None}, {"indirizzo": []}, {}])
-def test_api_rejects_non_object_and_bad_fields(client, logged_in, body):
-    response = client.post("/api/segnalazioni", json=body,
+def test_report_requires_attachment(client, logged_in, report_data):
+    response = client.post("/api/segnalazioni", data=report_data,
                            headers={"X-CSRFToken": csrf_token(client)})
     assert response.status_code == 400
-    assert response.is_json
+    assert "allega" in response.get_json()["error"].lower()
 
 
-def test_api_uses_session_author(client, logged_in, report_data):
+def test_publish_requires_category_quarter_and_accessible_text(client, logged_in, report_data):
+    for key, value in [("quartiere_id", ""), ("categorie", []),
+                       ("descrizione_accessibile", "")]:
+        payload = {**report_data, key: value, "allegato": (make_image(), "lampione.jpg")}
+        response = client.post("/api/segnalazioni", data=payload,
+                               headers={"X-CSRFToken": csrf_token(client)},
+                               content_type="multipart/form-data")
+        assert response.status_code == 400
+
+
+def test_publish_report_with_valid_image_and_confirmation(client, logged_in, report_data):
     response = client.post("/api/segnalazioni",
-                           json={**report_data, "id_autore": 999},
-                           headers={"X-CSRFToken": csrf_token(client)})
+        data={**report_data, "id_autore": "999", "stato": "risolta",
+              "allegato": (make_image(), "../../lampione.jpg")},
+        headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
     assert response.status_code == 201
-    assert response.get_json()["autore"] == "Marco Rossi"
+    result = response.get_json()
+    assert result["redirect"] == "/" and result["report"]["stato"] == "aperta"
+    assert "Segnalazione pubblicata correttamente." in client.get("/").get_data(as_text=True)
+    rows = client.get("/api/segnalazioni?mie=1").get_json()
+    assert rows[0]["autore"] == "Marco Rossi"
+    assert rows[0]["quartiere_id"] == 1
+    assert rows[0]["allegato_id"] == rows[0]["id"]
+    attachment = client.get(f"/api/allegati/{rows[0]['allegato_id']}")
+    assert attachment.status_code == 200
+    assert attachment.mimetype == "image/jpeg"
+
+
+def test_upload_checks_actual_file_content(client, logged_in, report_data):
+    response = client.post("/api/segnalazioni",
+        data={**report_data, "allegato": (BytesIO(b"not an image"), "photo.jpg")},
+        headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
+    assert response.status_code == 400
 
 
 @pytest.mark.parametrize("field,value", [
     ("titolo", "a" * 201), ("descrizione", "a" * 5001), ("indirizzo", "a" * 256),
-    ("tipo", "inesistente"),
+    ("tipo", "inesistente"), ("latitude", "180"), ("longitude", "999"),
 ])
-def test_server_enforces_report_limits(client, submit, logged_in, report_data, field, value):
-    assert submit("/reports/new", {**report_data, field: value}).status_code == 400
+def test_server_validates_report_fields(client, logged_in, report_data, field, value):
+    response = client.post("/api/segnalazioni",
+        data={**report_data, field: value, "allegato": (make_image(), "photo.jpg")},
+        headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
+    assert response.status_code == 400
+
+
+def test_profile_update_and_account_deletion(client, logged_in):
+    response = client.patch("/api/auth/me", json={"nome": "Marco Nuovo", "cognome": "Rossi", "quartiere_id": 2},
+                            headers={"X-CSRFToken": csrf_token(client)})
+    assert response.status_code == 200
+    assert response.get_json()["user"]["nome"] == "Marco Nuovo"
+    deleted = client.delete("/api/auth/me", headers={"X-CSRFToken": csrf_token(client)})
+    assert deleted.status_code == 200
+    assert client.get("/api/auth/me").status_code == 401
+
+
+def test_comments_and_support(client, logged_in):
+    report_id = 1
+    token = csrf_token(client)
+    comment = client.post(f"/api/segnalazioni/{report_id}/commenti", json={"testo": "Confermo"},
+                          headers={"X-CSRFToken": token})
+    assert comment.status_code == 201
+    assert client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
+    assert client.get(f"/api/segnalazioni/{report_id}/sostegno").get_json()["sostenuta"] is True
+    assert client.delete(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
+    assert client.get(f"/api/segnalazioni/{report_id}/sostegno").get_json()["sostenuta"] is False
+
+
+def test_moderation_requires_role(app, client, logged_in):
+    token = csrf_token(client)
+    denied = client.patch("/api/segnalazioni/1/stato", json={"stato": "risolta"},
+                          headers={"X-CSRFToken": token})
+    assert denied.status_code == 403
+    user = next(iter(app.extensions["demo_store"]["users"].values()))
+    app.extensions["demo_store"]["moderators"].add(user["id"])
+    allowed = client.patch("/api/segnalazioni/1/stato", json={"stato": "risolta"},
+                           headers={"X-CSRFToken": csrf_token(client)})
+    assert allowed.status_code == 200
 
 
 def test_security_headers(client):

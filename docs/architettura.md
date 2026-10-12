@@ -1,169 +1,97 @@
-# Autenticazione e nuova segnalazione
+# Architettura applicativa
 
-## Scelta architetturale
+Il progetto usa Flask con HTML/Jinja, CSS e JavaScript vanilla serviti dalla
+stessa origine. Le pagine contengono la struttura e il token CSRF; i moduli
+JavaScript inviano i dati alle API JSON. L'autenticazione usa cookie di sessione
+firmati Flask, senza token JWT esposti al browser.
 
-Il backend Flask è diviso in Blueprint: `auth` per l'accesso, `reports` per
-segnalazioni e API, `pages` per la bacheca. I form hanno una validazione condivisa
-in `backend/forms.py`; le query utenti sono in `backend/users.py`.
+## Rotte web
 
-I template HTML Jinja restano nella cartella `frontend/templates`. Stili e
-JavaScript sono in `frontend/static`. Flask serve solo quest'ultima come risorse
-pubbliche: un file HTML non permette di aggirare il controllo sulla rotta.
-
-## Rotte e protezioni
-
-| Rotta | Metodo | Accesso / risultato |
+| Rotta | Accesso | Scopo |
 | --- | --- | --- |
-| / | GET | Home pubblica, nessun form per creare segnalazioni |
-| /home | GET | Alias con redirect alla home |
-| /register | GET, POST | Form, validazione, inserimento, accesso automatico |
-| /login | GET, POST | Form, verifica hash e stato account, sessione |
-| /logout | POST | CSRF obbligatorio, svuota sessione, redirect home |
-| /reports/new | GET, POST | Sessione obbligatoria; form dedicato / creazione |
-| /dashboard | GET | Protetta, reindirizza alla home comune |
-| /api/segnalazioni | GET, POST | GET pubblico; POST autenticato con CSRF |
+| `/` | Pubblico | Bacheca con filtri, commenti e sostegni |
+| `/login`, `/register` | Pubblico | Accesso e creazione account |
+| `/reports/new` | Autenticato | Form dedicato per segnalazioni e proposte |
+| `/dashboard` | Autenticato | Bacheca personale con le proprie segnalazioni |
+| `/profilo` | Autenticato | Modifica dati e cancellazione logica account |
+| `/moderazione` | Ruolo moderatore | Strumenti di moderazione |
 
-Non è stata aggiunta una dashboard duplicata: `/dashboard` è un alias protetto.
+`/reports/new` è una pagina separata dalla home. Il POST applicativo è
+`multipart/form-data` su `/api/segnalazioni`: l'utente deve essere autenticato,
+il token CSRF è verificato e il server ricava l'autore dalla sessione. Dopo
+l'invio, la pagina mostra una conferma e riporta alla home.
 
-## Modello utente
+## Struttura del codice
 
-Riutilizza la tabella `UTENTE` già esistente, senza migrazioni:
-
-| Colonna | Tipo | Regola |
-| --- | --- | --- |
-| IdUtente | INT UNSIGNED | PK autoincrementale |
-| Nome, Cognome | VARCHAR(100) | Obbligatori, spazi esterni rimossi |
-| Email | VARCHAR(254) | Univoca, normalizzata in minuscolo |
-| HashPassword | VARCHAR(255) | Solo hash scrypt con salt, mai password in chiaro |
-| DataRegistrazione | DATETIME | Assegnata dal database |
-| StatoAccount | VARCHAR(30) | Registrazione sempre attivo |
-| DataCancellazione | DATETIME NULL | Un valore impedisce l'accesso |
-
-Password nuove: 12–128 caratteri, conferma uguale; nessun obbligo arbitrario di
-simboli o divieto di incollare. Gli hash scrypt e PBKDF2 Werkzeug e gli Argon2
-della prima app sono verificabili. Gli hash fittizi del seed sono rifiutati.
-
-## Sessione: cookie anziché JWT
-
-Con frontend e backend sulla stessa origine, la sessione Flask evita di gestire
-access token e refresh token nel JavaScript. Il cookie è **firmato, non cifrato**:
-contiene l'ID utente, il token CSRF e dati tecnici/messaggi flash, non password,
-hash o email. `SECRET_KEY` resta sul server e deve essere casuale e persistente.
-
-Impostazioni: `HttpOnly`, `SameSite=Lax`, durata 2 ore, `Secure=true` su HTTPS.
-CSRFProtect controlla tutti i POST, compresi login e logout; il solo SameSite
-non sostituisce il token CSRF.
-
-Ogni richiesta carica nuovamente l'utente dal database: blocco o cancellazione
-impediscono di continuare a usare una sessione precedente. Login e registrazione
-svuotano la sessione anonima prima di impostare l'ID, ruotando anche il token CSRF.
-Nessun ruolo, autore o stato dell'account viene accettato dal form.
-
-Il logout rimuove la sessione dal browser. Come per i cookie firmati stateless,
-una copia rubata del cookie resta valida fino alla scadenza: per revoca globale
-immediata dei dispositivi servirebbe uno store sessioni server-side. Questo
-progetto non implementa gestione dispositivi o revoca selettiva.
-
-## Flusso completo
-
-1. Il visitatore apre la home e sceglie “Nuova segnalazione”.
-2. `/reports/new` verifica l'accesso: se manca, invia a
-   `/login?next=/reports/new`. Da lì può anche aprire la registrazione.
-3. Dopo login o registrazione corretti, il server apre la destinazione interna
-   richiesta. Senza `next`, apre la home.
-4. La pagina dedicata mostra tipo, titolo, descrizione e indirizzo facoltativo;
-   il nome dell'autore è mostrato in sola lettura.
-5. Il POST controlla sessione, CSRF e campi. Gli errori tornano sullo stesso form,
-   conservando i testi validi. Nei form di accesso le password non sono mai riproposte.
-6. Solo dopo l'inserimento riuscito viene aggiunta la conferma e inviato un
-   `303 See Other` alla home (Post/Redirect/Get).
-7. La home mostra il messaggio una sola volta e ricarica l'elenco. Il refresh
-   non ripete il POST. Non esiste un modal di creazione.
-
-## Snippet commentati
-
-I file nel repository sono l'implementazione completa. Questi estratti mostrano
-i punti principali; non vanno incollati come applicazione indipendente.
-
-### Registrazione
-
-```python
-# backend/auth.py
-if form.validate_on_submit():
-    user = create_user(
-        form.nome.data, form.cognome.data, form.email.data,
-        generate_password_hash(form.password.data, method="scrypt"),
-    )
-    start_session(user)          # ID ricavato dal DB, non dal browser
-    flash("Registrazione completata.", "success")
-    return redirect(destination, code=303)
+```text
+backend/
+├── api/             # endpoint JSON per auth e cataloghi
+├── repositories/    # query SQL e modalità demo
+├── services/        # regole di validazione e casi d'uso
+├── app.py           # application factory, errori e intestazioni
+├── auth.py          # form HTML di login e registrazione
+├── reports.py       # endpoint segnalazioni e moderazione
+├── security.py      # sessione, CSRF, ruoli e password
+└── users.py         # accesso utenti e profilo
+frontend/
+├── templates/       # pagine HTML/Jinja
+└── static/          # CSS e JavaScript per pagina
+database/
+├── migrations/      # migrazione manuale per il database iniziale
+└── seeds/           # quartieri, categorie e stati di riferimento
 ```
 
-La versione completa gestisce il vincolo UNIQUE sull'email, anche in caso di
-inserimenti concorrenti, e limita i tentativi tramite Flask-Limiter.
+## Autenticazione e autorizzazione
 
-### Login e sessione
+La tabella `UTENTE` è riutilizzata. Nuove password sono salvate con Argon2id;
+gli hash legacy scrypt, PBKDF2 e Argon2 già esistenti sono verificati e
+aggiornati al login riuscito. Il cookie è `HttpOnly`, `SameSite=Lax`, dura due
+ore ed è marcato `Secure` quando configurato per HTTPS. Flask-WTF protegge tutte
+le richieste che modificano dati, incluse le richieste JSON.
 
-```python
-# Dopo validazione form, controllo hash e stato dell'account:
-session.clear()                 # Elimina la precedente sessione anonima
-session["user_id"] = user["id"]  # Mai memorizzare la password
-session.permanent = True
-return redirect(safe_next(request.form.get("next")), code=303)
-```
+L'utente viene ricaricato dal database a ogni richiesta. Il ruolo moderatore
+viene controllato in `MODERATORE` lato server; un campo inviato dal browser non
+può concedere permessi. I redirect post-login accettano solo destinazioni
+interne previste.
 
-La funzione `safe_next` accetta soltanto una piccola lista di rotte interne;
-non si reindirizza mai direttamente verso un URL arbitrario inviato dal browser.
+## Segnalazioni, allegati e database
 
-### Protezione e creazione
+Il service valida i campi, i quartieri e le categorie attive, verifica coordinate
+e allegato, poi il repository inserisce segnalazione, allegato, categorie,
+storico iniziale ed evento di audit nella stessa transazione MySQL. Se il
+salvataggio DB fallisce, il file viene rimosso. Gli upload hanno limite 20 MB,
+nomi casuali, verifica della firma e, per le immagini, decodifica e riscrittura
+Pillow per rimuovere metadati EXIF. Coordinate GPS EXIF possono precompilare la
+posizione.
 
-```python
-@reports.route("/reports/new", methods=["GET", "POST"])
-@login_required
-def new_report():
-    form = ReportForm()
-    if form.validate_on_submit():
-        create_report(form.report_data(), author=g.user)
-        flash("Segnalazione pubblicata correttamente.", "success")
-        return redirect("/", code=303)
-    return render_template("report_new.html", form=form), (
-        400 if request.method == "POST" else 200
-    )
-```
+Sostegni, commenti, stato e moderazione usano endpoint autenticati dove
+necessario; cambi di stato, blocchi e azioni moderate scrivono il log previsto
+dallo schema. La modalità demo usa uno store in memoria isolato per app/test.
 
-L'API POST applica lo stesso controllo e lo stesso form di validazione:
-non è possibile pubblicare direttamente da fetch senza autenticazione e CSRF.
+Il pool MySQL viene creato solo quando la modalità database lo richiede. La
+connessione richiede variabili DB e certificato CA; verifica certificato e
+identità TLS. Nessuna migrazione viene eseguita all'avvio.
 
-### Form HTML
+## Migrazione Aiven
 
-```html
-<form method="post" action="{{ url_for('auth.login') }}" data-submit-form>
-  {{ form.hidden_tag() }} <!-- Include il token CSRF -->
-  <input type="hidden" name="next" value="{{ next_url }}">
-  {{ field(form.email, type='email', autocomplete='email', required=true) }}
-  {{ field(form.password, autocomplete='current-password', required=true) }}
-  <button type="submit" data-busy-label="Accesso in corso…">Accedi</button>
-</form>
-```
+`database/migrations/002_extend_existing_schema.sql` è una migrazione manuale
+una tantum per lo schema iniziale fornito; non è idempotente. Il progetto non
+ha verificato lo schema attualmente presente su Aiven. Prima di usare
+`APP_MODE=database`, confrontare lo schema live con `database/schema/001_full_schema.sql`
+e la migrazione, fare un backup e applicare solo le modifiche mancanti. Eseguire
+anche `database/seeds/001_reference_data.sql` se mancano i dati di riferimento.
+Non eseguire la migrazione alla cieca su un database già aggiornato.
 
-La macro `field` aggiunge label, errori e attributi ARIA. `forms.js` disabilita
-temporaneamente il pulsante dopo un invio valido e porta il focus agli errori.
-L'autenticazione e la pubblicazione non dipendono da JavaScript.
+Impostare in locale `APP_MODE`, `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`,
+`DB_USER`, `DB_PASSWORD`, `DB_SSL_CA_PATH` e, se serve, `UPLOAD_FOLDER`.
+Credenziali e certificati restano fuori da Git. L'app usa per default la modalità
+demo finché `APP_MODE=database` non è configurato.
 
-## Verifiche e limiti
+## Limiti operativi
 
-I test usano cookie e token CSRF reali del client Flask, senza disattivare CSRF.
-Sono coperti flussi riusciti ed errori, duplicati, account disabilitati, token
-scaduti, cookie alterati, tentativi di falsificare l'autore e redirect esterni.
-I test SQL verificano binding, commit, rollback e chiusura delle connessioni.
-Non sono test live su Aiven: nessuna credenziale remota viene usata.
-
-Per produzione servono HTTPS, server WSGI, rate limiter con storage condiviso,
-gestione segreti e verifiche end-to-end nell'ambiente di deployment. Verifica
-email, recupero password, SPID/CIE, allegati e moderazione non sono inclusi.
-
-Riferimenti ufficiali:
-- [Sicurezza Flask](https://flask.palletsprojects.com/en/stable/web-security/)
-- [Hash password Werkzeug](https://werkzeug.palletsprojects.com/en/stable/utils/#module-werkzeug.security)
-- [CSRF Flask-WTF](https://flask-wtf.readthedocs.io/en/latest/csrf/)
-- [Flask-Limiter](https://flask-limiter.readthedocs.io/en/stable/)
+Gli upload locali sono adatti allo sviluppo; in produzione servono storage
+durabile, backup e controlli antimalware. Il rate limiter usa memoria per
+default e va configurato con storage condiviso su deployment multi-worker.
+Il cookie firmato non supporta revoca centralizzata immediata; per quella
+funzione serve uno store sessioni server-side. Email verification, recupero
+password e integrazioni SPID/CIE non sono incluse.

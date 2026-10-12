@@ -21,13 +21,14 @@ def fake_mysql(app, monkeypatch):
 def test_user_insert_is_parameterized_and_committed(fake_mysql):
     connection, cursor = fake_mysql
     user = users.create_user("O'Neil", "Rossi", "Marco@EXAMPLE.COM", "scrypt:demo-hash")
-    sql, params = cursor.execute.call_args.args
+    sql, params = cursor.execute.call_args_list[0].args
     assert "O'Neil" not in sql and "VALUES (%s, %s, %s, %s" in sql
     assert params == ("O'Neil", "Rossi", "marco@example.com", "scrypt:demo-hash")
     assert user["id"] == 42 and user["stato_account"] == "attivo"
     connection.commit.assert_called_once()
     cursor.close.assert_called_once()
     connection.close.assert_called_once()
+    assert cursor.execute.call_count == 2  # insert utente + evento di audit
 
 
 def test_duplicate_email_rolls_back(fake_mysql):

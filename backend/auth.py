@@ -1,11 +1,9 @@
 """Registrazione, login e logout: normali form POST con redirect dopo il successo."""
 
 from flask import Blueprint, current_app, flash, g, redirect, render_template, request, session
-from werkzeug.security import generate_password_hash
-
 from backend.forms import LoginForm, RegisterForm
-from backend.security import limiter, safe_next, start_session, verify_password
-from backend.users import DuplicateEmail, create_user, find_user_by_email
+from backend.security import hash_password, limiter, password_hasher, safe_next, start_session, verify_password
+from backend.users import DuplicateEmail, create_user, find_user_by_email, update_password_hash
 
 
 auth = Blueprint("auth", __name__)
@@ -23,7 +21,7 @@ def register():
             # Solo l'hash è scritto nel DB; mai la password originale.
             user = create_user(
                 form.nome.data, form.cognome.data, form.email.data,
-                generate_password_hash(form.password.data, method="scrypt"),
+                hash_password(form.password.data),
             )
         except DuplicateEmail:
             form.email.errors.append("Email già registrata. Accedi con il tuo account.")
@@ -48,6 +46,8 @@ def login():
         stored_hash = user["hash_password"] if user else current_app.extensions["dummy_password_hash"]
         valid = verify_password(stored_hash, form.password.data)
         if valid and user and user["stato_account"] == "attivo" and not user["data_cancellazione"]:
+            if not stored_hash.startswith("$argon2id$") or password_hasher.check_needs_rehash(stored_hash):
+                update_password_hash(user["id"], hash_password(form.password.data))
             start_session(user)
             flash("Accesso effettuato.", "success")
             return redirect(destination, code=303)

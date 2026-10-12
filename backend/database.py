@@ -5,9 +5,10 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import RLock
+from threading import Lock, RLock
 
 import mysql.connector
+from mysql.connector.pooling import MySQLConnectionPool
 from flask import current_app
 
 
@@ -26,12 +27,27 @@ DEMO_REPORTS = [
         "data_creazione": "2026-09-12T15:00:00", "sostegni": 5,
     },
 ]
+DEMO_NEIGHBORHOODS = [
+    {"id": 1, "nome": "Centro Storico", "municipio": 1},
+    {"id": 2, "nome": "Città Studi - Lambrate - Venezia", "municipio": 3},
+    {"id": 3, "nome": "Baggio - De Angeli - San Siro", "municipio": 7},
+]
+DEMO_CATEGORIES = [
+    {"id": 1, "nome": "Ambiente", "descrizione": "Verde e tutela ambientale.", "colore": "#2E7D32"},
+    {"id": 2, "nome": "Mobilità urbana", "descrizione": "Traffico e trasporti.", "colore": "#1565C0"},
+    {"id": 3, "nome": "Decoro urbano", "descrizione": "Pulizia e manutenzione.", "colore": "#8D6E63"},
+    {"id": 4, "nome": "Illuminazione", "descrizione": "Illuminazione pubblica.", "colore": "#F9A825"},
+    {"id": 5, "nome": "Accessibilità", "descrizione": "Accessibilità e inclusione.", "colore": "#00838F"},
+]
 
 
 def init_demo_store(app):
     # Una copia per applicazione: test isolati e nessun dato demo condiviso fra app.
     app.extensions["demo_store"] = {
-        "users": {}, "reports": deepcopy(DEMO_REPORTS), "lock": RLock(),
+        "users": {}, "reports": deepcopy(DEMO_REPORTS),
+        "quartieri": deepcopy(DEMO_NEIGHBORHOODS),
+        "categorie": deepcopy(DEMO_CATEGORIES), "comments": {}, "supports": set(),
+        "moderators": set(), "lock": RLock(),
     }
 
 
@@ -53,14 +69,27 @@ def get_connection():
         raise mysql.connector.InterfaceError("Certificato CA MySQL mancante.")
     try:
         port = int(os.getenv("DB_PORT", "3306"))
+        pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
     except ValueError as error:
-        raise mysql.connector.InterfaceError("Porta MySQL non valida.") from error
-    return mysql.connector.connect(
-        host=os.environ["DB_HOST"], port=port,
-        user=os.environ["DB_USER"], password=os.environ["DB_PASSWORD"],
-        database=os.getenv("DB_NAME", "nostra_citta"), connection_timeout=10,
-        ssl_ca=str(ca_path), ssl_verify_cert=True, ssl_verify_identity=True,
-    )
+        raise mysql.connector.InterfaceError("Porta o dimensione pool MySQL non valida.") from error
+    if not 1 <= pool_size <= 32:
+        raise mysql.connector.InterfaceError("Dimensione pool MySQL fuori limite.")
+    app = current_app._get_current_object()
+    pool = app.extensions.get("mysql_pool")
+    if pool is None:
+        lock = app.extensions.setdefault("mysql_pool_lock", Lock())
+        with lock:
+            pool = app.extensions.get("mysql_pool")
+            if pool is None:
+                pool = MySQLConnectionPool(
+                    pool_name=f"nostra_{id(app):x}", pool_size=pool_size, pool_reset_session=True,
+                    host=os.environ["DB_HOST"], port=port,
+                    user=os.environ["DB_USER"], password=os.environ["DB_PASSWORD"],
+                    database=os.getenv("DB_NAME", "nostra_citta"), connection_timeout=10,
+                    ssl_ca=str(ca_path), ssl_verify_cert=True, ssl_verify_identity=True,
+                )
+                app.extensions["mysql_pool"] = pool
+    return pool.get_connection()
 
 
 @contextmanager

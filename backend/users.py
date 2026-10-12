@@ -8,7 +8,7 @@ from backend.database import database_cursor, database_enabled, demo_store
 
 
 USER_COLUMNS = """
-    IdUtente AS id, Nome AS nome, Cognome AS cognome, Email AS email,
+    IdUtente AS id, IdQuartiere AS quartiere_id, Nome AS nome, Cognome AS cognome, Email AS email,
     HashPassword AS hash_password, StatoAccount AS stato_account,
     DataRegistrazione AS data_registrazione, DataCancellazione AS data_cancellazione
 """
@@ -42,6 +42,7 @@ def find_user_by_email(email):
 
 def create_user(nome, cognome, email, password_hash):
     user = {
+        "quartiere_id": None,
         "nome": nome, "cognome": cognome, "email": email.lower(),
         "hash_password": password_hash, "stato_account": "attivo",
         "data_registrazione": datetime.now(timezone.utc), "data_cancellazione": None,
@@ -53,6 +54,7 @@ def create_user(nome, cognome, email, password_hash):
                 raise DuplicateEmail()
             user["id"] = max(store["users"], default=100) + 1
             store["users"][user["id"]] = user
+            store.setdefault("events", []).append({"azione": "registrazione_account", "utente_id": user["id"]})
         return dict(user)
 
     try:
@@ -62,9 +64,86 @@ def create_user(nome, cognome, email, password_hash):
                 VALUES (%s, %s, %s, %s, 'attivo')
             """, (nome, cognome, user["email"], password_hash))
             user["id"] = cursor.lastrowid
+            cursor.execute("""INSERT INTO EVENTO_LOG
+                (IdEsecutore, TipoAzione, Esito, Dettagli, IdUtenteBersaglio)
+                VALUES (%s, 'registrazione_account', 'successo', 'Creato un account', %s)""",
+                (user["id"], user["id"]))
     except IntegrityError as error:
         # La UNIQUE sul DB risolve anche registrazioni concorrenti con la stessa email.
         if error.errno == 1062:
             raise DuplicateEmail() from error
         raise
     return user
+
+
+def has_role(user_id, role="moderatore"):
+    if role not in {"moderatore", "amministratore"}:
+        return False
+    if not database_enabled():
+        return user_id in demo_store()["moderators"]
+    with database_cursor() as cursor:
+        cursor.execute("SELECT LivelloPermessi FROM MODERATORE WHERE IdUtente = %s", (user_id,))
+        moderator = cursor.fetchone()
+        return bool(moderator) and (role == "moderatore" or moderator["LivelloPermessi"] == "amministratore")
+
+
+def update_profile(user_id, data):
+    if not database_enabled():
+        store = demo_store()
+        with store["lock"]:
+            user = store["users"].get(user_id)
+            if not user:
+                return None
+            previous = {key: user.get(key) for key in data}
+            user.update(data)
+            store.setdefault("events", []).append({"azione": "modifica_profilo", "utente_id": user_id,
+                                                   "precedente": previous, "successivo": data.copy()})
+            return dict(user)
+    with database_cursor(write=True) as cursor:
+        cursor.execute("SELECT Nome, Cognome, IdQuartiere FROM UTENTE WHERE IdUtente=%s FOR UPDATE", (user_id,))
+        previous = cursor.fetchone()
+        if not previous:
+            return None
+        cursor.execute("""UPDATE UTENTE SET Nome = %s, Cognome = %s, IdQuartiere = %s
+                          WHERE IdUtente = %s AND StatoAccount = 'attivo'""",
+                       (data["nome"], data["cognome"], data.get("quartiere_id"), user_id))
+        cursor.execute("""INSERT INTO EVENTO_LOG
+            (IdEsecutore, TipoAzione, Esito, Dettagli, IdUtenteBersaglio)
+            VALUES (%s, 'modifica_profilo', 'successo', 'Aggiornato il profilo', %s)""",
+            (user_id, user_id))
+        event_id = cursor.lastrowid
+        for field, key in (("Nome", "nome"), ("Cognome", "cognome"), ("IdQuartiere", "quartiere_id")):
+            if previous[field] != data.get(key):
+                cursor.execute("""INSERT INTO VARIAZIONE_LOG
+                    (IdEvento, NomeCampo, ValorePrecedente, ValoreSuccessivo)
+                    VALUES (%s, %s, %s, %s)""", (event_id, f"UTENTE.{field}", previous[field], data.get(key)))
+    return find_user_by_id(user_id)
+
+
+def delete_account(user_id):
+    if not database_enabled():
+        store = demo_store()
+        with store["lock"]:
+            user = store["users"].get(user_id)
+            if user:
+                user["stato_account"] = "cancellato"
+                user["data_cancellazione"] = datetime.now(timezone.utc)
+                store.setdefault("events", []).append({"azione": "cancellazione_account", "utente_id": user_id})
+        return
+    with database_cursor(write=True) as cursor:
+        cursor.execute("""UPDATE UTENTE SET StatoAccount = 'cancellato',
+                          DataCancellazione = CURRENT_TIMESTAMP WHERE IdUtente = %s""", (user_id,))
+        cursor.execute("""INSERT INTO EVENTO_LOG
+            (IdEsecutore, TipoAzione, Esito, Dettagli, IdUtenteBersaglio)
+            VALUES (%s, 'cancellazione_account', 'successo', 'Cancellazione logica richiesta dall’utente', %s)""",
+            (user_id, user_id))
+
+
+def update_password_hash(user_id, password_hash):
+    if not database_enabled():
+        user = demo_store()["users"].get(user_id)
+        if user:
+            user["hash_password"] = password_hash
+        return
+    with database_cursor(write=True) as cursor:
+        cursor.execute("UPDATE UTENTE SET HashPassword=%s WHERE IdUtente=%s", (password_hash, user_id))

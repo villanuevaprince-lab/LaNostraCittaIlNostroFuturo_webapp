@@ -11,7 +11,7 @@
     </div>
     <a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
   </section>
-  <section class="panel" aria-labelledby="segnalazioni-title">
+  <section class="panel" aria-labelledby="segnalazioni-title" data-authenticated="{{ 'true' if g.user else 'false' }}">
     <div class="section-heading">
       <div>
         <p class="eyebrow">Bacheca pubblica</p>
@@ -20,6 +20,16 @@
       <label class="search" for="search-input">Cerca
         <input id="search-input" type="search" maxlength="200" placeholder="Titolo, descrizione o luogo">
       </label>
+    </div>
+    <div class="form-row filter-row">
+      <label class="field">Quartiere<select id="filter-neighborhood"><option value="">Tutti i quartieri</option></select></label>
+      <label class="field">Categoria<select id="filter-category"><option value="">Tutte le categorie</option></select></label>
+      <label class="field">Stato<select id="filter-state">
+        <option value="">Tutti gli stati</option><option value="nuova">Nuova</option>
+        <option value="aperta">Aperta</option><option value="in_valutazione">In valutazione</option>
+        <option value="in_lavorazione">In lavorazione</option><option value="presa_in_carico">Presa in carico</option>
+        <option value="risolta">Risolta</option><option value="chiusa">Chiusa</option>
+      </select></label>
     </div>
     <p id="list-status" class="status" role="status">Caricamento…</p>
     <div id="report-list" class="report-grid"></div>

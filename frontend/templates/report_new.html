@@ -1,27 +1,62 @@
 {% extends "base.html" %}
-{% from "_forms.html" import field, error_summary %}
-{% block title %}Nuova segnalazione — La Nostra Città{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/report.js') }}" defer></script>
+{% endblock %}
 {% block content %}
   <a class="back-link" href="/">← Torna alla bacheca</a>
   <section class="panel form-panel" aria-labelledby="report-title">
     <div>
       <p class="eyebrow">Il tuo contributo</p>
       <h1 id="report-title" class="page-title">Nuova segnalazione</h1>
-      <p>Descrivi il problema o proponi un miglioramento. Dopo l'invio tornerai alla bacheca.</p>
-      <p>Pubblicherai come <strong>{{ g.user.nome }} {{ g.user.cognome }}</strong>.</p>
-      <p class="mode-note">Non inserire password o dati sensibili: il contenuto sarà pubblico.</p>
+      <p>Descrivi il problema o la proposta e allega una prova. Dopo l'invio tornerai alla bacheca.</p>
+      <p>Pubblicherai come <strong>{{ user.nome }} {{ user.cognome }}</strong>.</p>
+      <p class="mode-note">L'allegato e il contenuto saranno pubblici. Non caricare documenti con dati personali.</p>
     </div>
-    <div>
-      {{ error_summary(form) }}
-      <form id="report-form" method="post" action="{{ url_for('reports.new_report') }}" data-submit-form>
-        {{ form.hidden_tag() }}
-        {{ field(form.tipo, required=true) }}
-        {{ field(form.titolo, minlength=3, maxlength=200, required=true) }}
-        {{ field(form.descrizione, minlength=10, maxlength=5000, rows=6, required=true) }}
-        {{ field(form.indirizzo, maxlength=255, autocomplete='street-address') }}
-        <button class="button" type="submit" data-busy-label="Pubblicazione in corso…">Pubblica</button>
-        <a class="back-link" href="/">Annulla e torna alla home</a>
-      </form>
-    </div>
+    <form id="report-form" method="post" action="{{ url_for('reports.post_report') }}"
+          enctype="multipart/form-data" data-report-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="field">Tipo
+        <select name="tipo" required>
+          <option value="">Seleziona</option>
+          <option value="segnalazione">Segnalazione</option>
+          <option value="proposta">Proposta</option>
+        </select>
+      </label>
+      <label class="field">Titolo
+        <input name="titolo" minlength="3" maxlength="200" required>
+      </label>
+      <label class="field">Descrizione
+        <textarea name="descrizione" minlength="10" maxlength="5000" rows="6" required></textarea>
+      </label>
+      <label class="field">Quartiere
+        <select name="quartiere_id" id="neighborhood-select" required>
+          <option value="">Caricamento quartieri…</option>
+        </select>
+      </label>
+      <label class="field">Categorie (scegline da una a cinque)
+        <select name="categorie" id="category-select" multiple size="5" required aria-describedby="category-help">
+          <option value="">Caricamento categorie…</option>
+        </select>
+      </label>
+      <small id="category-help">Su computer usa Ctrl o Cmd per selezioni multiple.</small>
+      <label class="field">Indirizzo
+        <input name="indirizzo" maxlength="255" autocomplete="street-address">
+      </label>
+      <div class="form-row">
+        <label class="field">Latitudine <input name="latitude" type="number" min="-90" max="90" step="any"></label>
+        <label class="field">Longitudine <input name="longitude" type="number" min="-180" max="180" step="any"></label>
+      </div>
+      <label class="field">Foto o video (obbligatorio)
+        <input name="allegato" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
+      </label>
+      <small>Massimo 20 MB. Formati: JPEG, PNG, WebP, MP4 o WebM.</small>
+      <label class="field">Descrizione accessibile dell'allegato
+        <textarea name="descrizione_accessibile" maxlength="500" rows="3" required
+                  placeholder="Descrivi in modo semplice cosa mostra la foto o il video"></textarea>
+      </label>
+      <button class="button" type="submit">Pubblica</button>
+      <p data-form-status class="status" role="status" aria-live="polite"></p>
+      <a class="back-link" href="/">Annulla e torna alla home</a>
+    </form>
   </section>
 {% endblock %}

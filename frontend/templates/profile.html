@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Profilo — La Nostra Città{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/profile.js') }}" defer></script>{% endblock %}
+{% block content %}
+  <section class="panel auth-panel"><p class="eyebrow">Il tuo account</p><h1 class="page-title">Profilo</h1>
+    <form id="profile-form" data-profile-form>
+      <label class="field">Nome<input name="nome" maxlength="100" required></label>
+      <label class="field">Cognome<input name="cognome" maxlength="100" required></label>
+      <label class="field">Email<input name="email" type="email" readonly></label>
+      <label class="field">Quartiere di appartenenza<select name="quartiere_id" id="profile-neighborhood"><option value="">Nessuno</option></select></label>
+      <button class="button" type="submit">Salva profilo</button>
+    </form>
+    <p id="profile-status" class="status" role="status" aria-live="polite"></p>
+    <hr><h2>Elimina account</h2><p>L'account sarà disattivato con cancellazione logica.</p>
+    <button class="button button-danger" id="delete-account" type="button">Elimina il mio account</button>
+  </section>
+{% endblock %}

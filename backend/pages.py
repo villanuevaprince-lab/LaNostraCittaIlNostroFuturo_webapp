@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, redirect, render_template
 
 from backend.database import database_enabled
-from backend.security import login_required
+from backend.security import login_required, role_required
 
 
 pages = Blueprint("pages", __name__)
@@ -20,8 +20,19 @@ def home_alias():
 @pages.get("/dashboard")
 @login_required
 def dashboard():
-    # Per ora la bacheca è comune: non duplichiamo una seconda homepage.
-    return redirect("/")
+    return render_template("dashboard.html")
+
+
+@pages.get("/profilo")
+@login_required
+def profile():
+    return render_template("profile.html")
+
+
+@pages.get("/moderazione")
+@role_required("moderatore")
+def moderation():
+    return render_template("moderation.html")
 
 
 @pages.get("/api/health")

@@ -33,7 +33,8 @@ def create_app(test_config=None):
         PERMANENT_SESSION_LIFETIME=timedelta(hours=2),
         SESSION_REFRESH_EACH_REQUEST=False,
         WTF_CSRF_TIME_LIMIT=3600,
-        MAX_CONTENT_LENGTH=64 * 1024,
+        MAX_CONTENT_LENGTH=21 * 1024 * 1024,
+        UPLOAD_FOLDER=os.getenv("UPLOAD_FOLDER", str(ROOT_DIR / "storage" / "uploads")),
         RATELIMIT_STORAGE_URI=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
         RATELIMIT_HEADERS_ENABLED=True,
     )
@@ -59,10 +60,14 @@ def create_app(test_config=None):
     limiter.init_app(app)
 
     from backend.auth import auth
+    from backend.api.auth import auth_api
+    from backend.api.catalog import catalog_api
     from backend.pages import pages
     from backend.reports import reports
 
     app.register_blueprint(auth)
+    app.register_blueprint(auth_api)
+    app.register_blueprint(catalog_api)
     app.register_blueprint(pages)
     app.register_blueprint(reports)
 

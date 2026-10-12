@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — La Nostra Città{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>{% endblock %}
+{% block content %}
+  <section class="hero"><div><p class="eyebrow">Area personale</p><h1>La tua dashboard</h1>
+    <p>Qui trovi le segnalazioni e le proposte pubblicate dal tuo account.</p></div>
+    <a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a></section>
+  <section class="panel"><p id="dashboard-status" class="status" role="status">Caricamento…</p>
+    <div id="my-reports" class="report-grid"></div></section>
+{% endblock %}

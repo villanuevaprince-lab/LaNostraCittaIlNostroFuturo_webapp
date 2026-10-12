@@ -22,7 +22,10 @@
       <a href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
       {% if g.user %}
         <span class="nav-user">Ciao, {{ g.user.nome }}</span>
-        <form class="inline-form" method="post" action="{{ url_for('auth.logout') }}">
+        <a href="{{ url_for('pages.profile') }}">Profilo</a>
+        <a href="{{ url_for('pages.dashboard') }}">Dashboard</a>
+        {% if g.user.is_moderator %}<a href="{{ url_for('pages.moderation') }}">Moderazione</a>{% endif %}
+        <form class="inline-form" method="post" action="{{ url_for('auth_api.logout_api') }}" data-api-action>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="button-link" type="submit">Esci</button>
         </form>

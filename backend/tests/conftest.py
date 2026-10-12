@@ -14,12 +14,13 @@ def never_connect_to_aiven(monkeypatch):
 
 
 @pytest.fixture()
-def app():
+def app(tmp_path):
     return create_app({
         "TESTING": True, "APP_MODE": "demo",
         "SECRET_KEY": "only-for-local-tests-" + "x" * 32,
         "RATELIMIT_ENABLED": False,
         "SESSION_COOKIE_SECURE": False,
+        "UPLOAD_FOLDER": str(tmp_path / "uploads"),
     })
 
 
@@ -63,4 +64,6 @@ def report_data():
         "tipo": "segnalazione", "titolo": "Lampione spento",
         "descrizione": "Il lampione non funziona da alcuni giorni.",
         "indirizzo": "Via Roma, Milano",
+        "quartiere_id": "1", "categorie": ["1"],
+        "descrizione_accessibile": "Un lampione spento lungo il marciapiede.",
     }
