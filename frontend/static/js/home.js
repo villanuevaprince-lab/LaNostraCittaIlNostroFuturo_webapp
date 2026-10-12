@@ -4,6 +4,7 @@ const search = document.querySelector("#search-input");
 const neighborhood = document.querySelector("#filter-neighborhood");
 const category = document.querySelector("#filter-category");
 const state = document.querySelector("#filter-state");
+const sort = document.querySelector("#sort-reports");
 const isAuthenticated = document.querySelector("[data-authenticated]")?.dataset.authenticated === "true";
 const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
 let searchTimer;
@@ -28,6 +29,7 @@ async function loadReports() {
   if (neighborhood.value) params.set("quartiere", neighborhood.value);
   if (category.value) params.set("categoria", category.value);
   if (state.value) params.set("stato", state.value);
+  params.set("ordina", sort.value);
   try {
     const response = await fetch(`/api/segnalazioni?${params}`, {
       signal: requestController.signal, credentials: "same-origin",
@@ -52,9 +54,17 @@ function createCard(report) {
     .forEach((value) => { const item = document.createElement("span"); item.textContent = value; meta.append(item); });
   card.append(badge, title, description, meta);
   if (report.allegato_id) {
-    const image = document.createElement("img"); image.src = `/api/allegati/${report.allegato_id}`;
-    image.alt = `Allegato della segnalazione: ${report.titolo}`; image.loading = "lazy";
-    image.className = "report-image"; card.append(image);
+    const url = `/api/allegati/${report.allegato_id}`;
+    const description = report.allegato_descrizione || `Allegato della segnalazione: ${report.titolo}`;
+    if (report.allegato_tipo?.startsWith("video/")) {
+      const video = document.createElement("video"); video.src = url; video.controls = true;
+      video.preload = "metadata"; video.setAttribute("aria-label", description);
+      video.className = "report-image"; card.append(video);
+    } else {
+      const image = document.createElement("img"); image.src = url;
+      image.alt = description; image.loading = "lazy";
+      image.className = "report-image"; card.append(image);
+    }
   }
   if (isAuthenticated) {
     const support = document.createElement("button"); support.className = "button button-secondary";
@@ -67,6 +77,7 @@ function createCard(report) {
       if (!response.ok) throw new Error(data.error || "Aggiornamento non riuscito.");
       support.dataset.supported = String(!supported);
       support.textContent = supported ? "Sostieni" : "Ritira sostegno";
+      await loadReports();
     };
     fetch(`/api/segnalazioni/${report.id}/sostegno`, { credentials: "same-origin" })
       .then((response) => response.json()).then((data) => {
@@ -117,5 +128,5 @@ function createCard(report) {
 }
 
 search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadReports, 250); });
-[neighborhood, category, state].forEach((select) => select.addEventListener("change", loadReports));
+[neighborhood, category, state, sort].forEach((select) => select.addEventListener("change", loadReports));
 loadFilters().then(loadReports).catch((error) => { status.textContent = error.message; });

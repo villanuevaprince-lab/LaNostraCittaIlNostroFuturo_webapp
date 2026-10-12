@@ -129,9 +129,26 @@ def test_comments_and_support(client, logged_in):
                           headers={"X-CSRFToken": token})
     assert comment.status_code == 201
     assert client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
+    assert client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 409
     assert client.get(f"/api/segnalazioni/{report_id}/sostegno").get_json()["sostenuta"] is True
     assert client.delete(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
     assert client.get(f"/api/segnalazioni/{report_id}/sostegno").get_json()["sostenuta"] is False
+    assert client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
+
+
+def test_priority_sort_and_attachment_metadata(app, client):
+    store = app.extensions["demo_store"]
+    store["reports"][0]["sostegni"] = 9
+    store["reports"][0]["allegato_id"] = 22
+    store["reports"][0]["allegato_tipo"] = "video/mp4"
+    store["reports"][0]["allegato_descrizione"] = "Video della buca"
+    assert client.get("/api/segnalazioni?ordina=non-valido").status_code == 400
+    recent = client.get("/api/segnalazioni").get_json()
+    priority = client.get("/api/segnalazioni?ordina=sostegni").get_json()
+    assert recent[0]["id"] == 2
+    assert priority[0]["id"] == 1
+    assert priority[0]["allegato_tipo"] == "video/mp4"
+    assert priority[0]["allegato_descrizione"] == "Video della buca"
 
 
 def test_moderation_requires_role(app, client, logged_in):

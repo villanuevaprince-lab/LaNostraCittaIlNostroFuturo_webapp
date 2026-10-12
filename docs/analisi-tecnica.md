@@ -1,5 +1,7 @@
 # Analisi tecnica — La Nostra Città, Il Nostro Futuro
 
+La sezione 1 e la tabella della sezione 2 descrivono **lo stato iniziale prima
+dell'implementazione**. Lo stato corrente è riepilogato nelle sezioni 8 e 9.
 Analisi statica del repository disponibile il 12 ottobre 2026. Non sono state
 usate credenziali né aperte connessioni verso Aiven. Il file
 `analisi_requisiti_esercizio_1.md` citato nel prompt non è presente; per i
@@ -297,3 +299,26 @@ La suite pytest non è stata eseguibile in questo ambiente: le dipendenze Flask,
 MySQL e pytest non erano installate e l'accesso a PyPI è bloccato. Sono invece
 stati eseguiti `python -m compileall -q backend`, `node --check` per i moduli JS
 e `git diff --check`; tutti sono terminati correttamente.
+
+## 9. Revisione del 12 ottobre: classifica e integrità degli allegati
+
+Il file `analisi_requisiti_esercizio_1.md` resta assente dal repository; sono
+stati confrontati il PDF dell'esercizio, il documento dei requisiti, gli script
+SQL allegati (identici a quelli versionati) e il codice corrente. Lo stack
+resta Flask, HTML/CSS/JavaScript vanilla e MySQL 8. La modalità demo è solo
+per sviluppo e test; le credenziali MySQL non sono state configurate.
+
+| Requisito | Esito della revisione | Intervento | Priorità residua |
+| --- | --- | --- | --- |
+| Classifica per sostegni | Vista SQL presente, bacheca senza ordinamento | `ordina=sostegni`, ordinamento SQL e demo, selettore UI | bassa |
+| Sostegno unico attivo | UNIQUE sul DB, ma PUT ripetuto riscriveva la data e il log | Conflitto `409` per PUT ripetuto; riattivazione dopo ritiro | bassa |
+| Allegato multimediale | Upload video ammesso, ma sempre renderizzato come immagine | MIME e descrizione nell'API, `<video>` con controlli | bassa |
+| Allegato obbligatorio | Controllo applicativo, nessun vincolo DB alla pubblicazione | Inserimento in bozza, pubblicazione dopo upload e trigger MySQL | alta finché la migrazione 003 non è applicata |
+| Privacy e accessibilità | EXIF rimosso dall'immagine; lettura vocale e mappa non presenti | Verifica UX/accessibilità e consenso alla posizione in una fase successiva | media |
+| Moduli IA e SPID/CIE | Solo schema predisposto; integrazioni assenti | Richiedono servizi e flussi esterni dedicati | media |
+| Test DB | Test unitari/demo e mock MySQL; nessun DB di test reale | Eseguire migrazioni e suite su MySQL 8 isolato | alta |
+
+`003_enforce_attachment_publication.sql` è manuale e non idempotente: prima
+occorre verificare gli allegati delle righe già pubbliche, fare un backup e
+controllare che i quattro trigger non esistano. Non è stata aperta alcuna
+connessione Aiven. Il database non è stato migrato in questa revisione.
