@@ -10,18 +10,22 @@ usa MySQL 8 quando configurato e include una modalità demo in memoria.
   preesistenti vengono verificati e aggiornati al login.
 - Cookie di sessione HttpOnly, SameSite=Lax, CSRF per le richieste mutative e
   limiti per login/registrazione.
-- Bacheca con ricerca per testo, quartiere, categoria e stato.
+- Bacheca con ricerca per testo, quartiere, categoria e stato; ordine cronologico
+  oppure classifica per sostegni attivi.
 - Pagina profilo con modifica dei dati e cancellazione logica dell'account.
 - Pagina dedicata per nuove segnalazioni: quartiere, una o più categorie,
   posizione, foto/video obbligatorio e descrizione accessibile.
 - Validazione upload JPEG/PNG/WebP/MP4/WebM fino a 20 MB. Le immagini sono
   verificate con Pillow, le coordinate EXIF valide possono compilare la
   posizione e l'immagine viene risalvata senza metadati EXIF.
-- Commenti e sostegni con controllo account e CSRF.
+- Commenti e sostegni con controllo account e CSRF; un sostegno già attivo
+  restituisce `409`, mentre quello ritirato può essere riattivato.
 - Area moderazione protetta da ruolo DB: stato e visibilità dei contenuti,
   rimozione commenti e blocco/sblocco account con eventi di audit.
 - Storico stato, evento di pubblicazione e allegato salvati nella stessa
-  transazione MySQL della segnalazione.
+  transazione MySQL della segnalazione. La pubblicazione avviene dopo l'upload;
+  i trigger impediscono la pubblicazione senza allegato e la rimozione
+  dell'ultimo allegato di una segnalazione pubblica.
 
 ## Struttura
 
@@ -62,10 +66,22 @@ in memoria e scompaiono al riavvio. Non usare la demo come deployment.
 3. Verifica lo schema reale e crea un backup prima di qualsiasi DDL.
 4. Se il DB contiene solo lo schema iniziale, applica **una sola volta**
    `database/migrations/002_extend_existing_schema.sql`; poi applica
-   `database/seeds/001_reference_data.sql`. La migrazione non è idempotente.
+   `database/seeds/001_reference_data.sql`. Le migrazioni non sono idempotenti.
+   Controlla eventuali segnalazioni già pubbliche senza allegato:
+
+   ```sql
+   SELECT s.IdSegnalazione FROM SEGNALAZIONE s
+   LEFT JOIN ALLEGATO a ON a.IdSegnalazione = s.IdSegnalazione
+   WHERE s.Visibilita = 'pubblica'
+   GROUP BY s.IdSegnalazione HAVING COUNT(a.IdAllegato) = 0;
+   ```
+
+   Risolvi i casi trovati e applica **una sola volta**
+   `database/migrations/003_enforce_attachment_publication.sql` tramite il
+   client `mysql` (lo script usa `DELIMITER`).
 5. Se quartieri, stati, categorie, storico, allegati estesi e tabelle ponte sono
-   già presenti, non rilanciare la migrazione: confronta lo schema e, se serve,
-   esegui solo il seed idempotente.
+   già presenti, non rilanciare la migrazione 002: confronta lo schema e, se
+   serve, esegui il seed idempotente e la migrazione 003 solo se mancano i trigger.
 6. Avvia l'app. La connessione richiede il certificato CA e verifica certificato
    e hostname TLS. L'app non esegue migrazioni automatiche.
 
@@ -92,11 +108,11 @@ Le richieste che modificano dati richiedono il token CSRF nell'header
 | `POST /api/auth/logout` | Sessione | Uscita |
 | `GET/PATCH/DELETE /api/auth/me` | Sessione | Profilo e cancellazione logica |
 | `GET /api/quartieri`, `GET /api/categorie` | Pubblico | Cataloghi attivi |
-| `GET /api/segnalazioni` | Pubblico | Ricerca e filtri; `?mie=1` richiede login |
+| `GET /api/segnalazioni` | Pubblico | Ricerca, filtri, `?ordina=sostegni`; `?mie=1` richiede login |
 | `POST /api/segnalazioni` | Sessione | `multipart/form-data`, allegato obbligatorio |
 | `GET /api/segnalazioni/<id>` | Pubblico | Dettaglio e commenti |
 | `POST /api/segnalazioni/<id>/commenti` | Sessione | Pubblica un commento |
-| `GET/PUT/DELETE /api/segnalazioni/<id>/sostegno` | Sessione | Legge, esprime o ritira sostegno |
+| `GET/PUT/DELETE /api/segnalazioni/<id>/sostegno` | Sessione | Legge, esprime o ritira sostegno; duplicato attivo `409` |
 | `GET /api/allegati/<id>` | Pubblico se segnalazione pubblica | Scarica allegato controllato |
 | `PATCH /api/segnalazioni/<id>/stato` | Moderatore | Transizione di stato e storico |
 | `/api/moderazione/*` | Moderatore | Visibilità, commenti e blocchi |

@@ -54,9 +54,12 @@ Pubblico. Parametri facoltativi:
 - `quartiere`: ID del quartiere;
 - `categoria`: ID categoria;
 - `stato`: codice stato;
+- `ordina`: `recenti` (default) oppure `sostegni` (priorità per sostegni attivi);
 - `mie=1`: contenuti dell'utente autenticato.
 
-Risultati limitati a 100, ordinati dal più recente. Non include email/hash.
+Risultati limitati a 100; l'ordinamento per sostegni usa data e ID come
+discriminanti. Il primo allegato include ID, MIME e descrizione accessibile.
+Non include email/hash.
 
 ### `POST /api/segnalazioni`
 
@@ -86,8 +89,9 @@ const response = await fetch("/api/segnalazioni", {
 ```
 
 L'autore proviene dalla sessione; valori client come `id_autore`, stato e
-visibilità non vengono usati. File, segnalazione, categorie, storico iniziale
-ed evento vengono registrati insieme nella transazione SQL. Se il DB fallisce,
+visibilità non vengono usati. File, segnalazione inizialmente in bozza, categorie,
+storico iniziale ed evento vengono registrati insieme nella transazione SQL;
+la visibilità diventa pubblica solo dopo l'allegato. Se il DB fallisce,
 il file appena scritto viene eliminato. La risposta è `201` e include la
 destinazione `/` con messaggio flash di conferma.
 
@@ -111,7 +115,8 @@ un nome casuale generato dal server e viene confinato nella directory upload.
   1–3000 caratteri. `201` a successo.
 - `GET /api/segnalazioni/<id>/sostegno`: sessione, restituisce `sostenuta` boolean.
 - `PUT /api/segnalazioni/<id>/sostegno`: sessione + CSRF, esprime o riattiva il
-  sostegno; il vincolo unico impedisce righe duplicate.
+  sostegno; il vincolo unico impedisce righe duplicate e un sostegno già attivo
+  restituisce `409`.
 - `DELETE /api/segnalazioni/<id>/sostegno`: sessione + CSRF, valorizza `DataRitiro`.
 
 ## Moderazione

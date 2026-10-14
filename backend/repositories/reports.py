@@ -17,7 +17,8 @@ def create_report_record(data, author, upload):
                 "quartiere_id": int(data["quartiere_id"]), "categorie": data["categorie"],
                 "allegato": upload["reference"], "latitude": data.get("latitude"),
                 "longitude": data.get("longitude"),
-                "allegato_id": report_id,
+                "allegato_id": report_id, "allegato_tipo": upload["mime"],
+                "allegato_descrizione": upload["accessible_description"],
             }
             store["reports"].insert(0, report)
             store["history"] = store.setdefault("history", {})
@@ -28,7 +29,7 @@ def create_report_record(data, author, upload):
         cursor.execute("""INSERT INTO SEGNALAZIONE
             (IdAutore, IdQuartiere, Tipo, Titolo, Descrizione, Stato, Visibilita,
              Latitudine, Longitudine, Indirizzo)
-            VALUES (%s, %s, %s, %s, %s, %s, 'pubblica', %s, %s, %s)""",
+            VALUES (%s, %s, %s, %s, %s, %s, 'bozza', %s, %s, %s)""",
             (author["id"], data["quartiere_id"], data["tipo"], data["titolo"],
              data["descrizione"], initial_state, data.get("latitude"), data.get("longitude"), data.get("indirizzo") or None))
         report_id = cursor.lastrowid
@@ -50,19 +51,26 @@ def create_report_record(data, author, upload):
             (IdEsecutore, TipoAzione, Esito, Dettagli, IdSegnalazione)
             VALUES (%s, 'creazione_segnalazione', 'successo', 'Segnalazione pubblicata con allegato', %s)""",
             (author["id"], report_id))
+        # Il passaggio a pubblica avviene solo dopo l'allegato, nella stessa transazione.
+        cursor.execute("UPDATE SEGNALAZIONE SET Visibilita='pubblica' WHERE IdSegnalazione=%s", (report_id,))
     return {"id": report_id, "titolo": data["titolo"], "stato": initial_state}
 
 
-def list_report_records(search="", neighborhood_id=None, category_id=None, state=None, author_id=None):
+def list_report_records(search="", neighborhood_id=None, category_id=None, state=None, author_id=None, order="recenti"):
     if not database_enabled():
         store = demo_store()
         term = search.casefold()
-        return [row for row in store["reports"] if row.get("visibilita", "pubblica") == "pubblica"
+        rows = [row for row in store["reports"] if row.get("visibilita", "pubblica") == "pubblica"
                 and (not term or term in (row["titolo"] + row["descrizione"] + row["indirizzo"]).casefold())
                 and (not neighborhood_id or str(row.get("quartiere_id")) == str(neighborhood_id))
                 and (not state or row["stato"] == state)
                 and (not category_id or str(category_id) in {str(c) for c in row.get("categorie", [])})
                 and (not author_id or row.get("autore_id") == author_id)]
+        if order == "sostegni":
+            rows.sort(key=lambda row: (row.get("sostegni", 0), row["data_creazione"], row["id"]), reverse=True)
+        else:
+            rows.sort(key=lambda row: (row["data_creazione"], row["id"]), reverse=True)
+        return rows[:100]
     filters = ["s.Visibilita = 'pubblica'", "(%s = '' OR s.Titolo LIKE %s OR s.Descrizione LIKE %s OR COALESCE(s.Indirizzo, '') LIKE %s)"]
     params = [search, f"%{search}%", f"%{search}%", f"%{search}%"]
     if neighborhood_id:
@@ -82,9 +90,15 @@ def list_report_records(search="", neighborhood_id=None, category_id=None, state
         CONCAT(u.Nome, ' ', u.Cognome) AS autore, s.DataCreazione AS data_creazione,
         s.IdQuartiere AS quartiere_id,
         (SELECT COUNT(*) FROM SOSTEGNO so WHERE so.IdSegnalazione=s.IdSegnalazione AND so.DataRitiro IS NULL) AS sostegni,
-        (SELECT a.IdAllegato FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione ORDER BY a.IdAllegato LIMIT 1) AS allegato_id
+        (SELECT a.IdAllegato FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione ORDER BY a.IdAllegato LIMIT 1) AS allegato_id,
+        (SELECT a.TipoMedia FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione ORDER BY a.IdAllegato LIMIT 1) AS allegato_tipo,
+        (SELECT a.DescrizioneAccessibile FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione ORDER BY a.IdAllegato LIMIT 1) AS allegato_descrizione
         FROM SEGNALAZIONE s JOIN UTENTE u ON u.IdUtente=s.IdAutore
-        WHERE """ + " AND ".join(filters) + " ORDER BY s.DataCreazione DESC LIMIT 100"
+        WHERE """ + " AND ".join(filters) + (
+            " ORDER BY sostegni DESC, s.DataCreazione DESC, s.IdSegnalazione DESC LIMIT 100"
+            if order == "sostegni" else
+            " ORDER BY s.DataCreazione DESC, s.IdSegnalazione DESC LIMIT 100"
+        )
     with database_cursor() as cursor:
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
@@ -137,26 +151,42 @@ def add_comment(report_id, user_id, text):
 
 def set_support(report_id, user_id, active):
     if not database_enabled():
+        store = demo_store()
         key = (int(user_id), int(report_id))
+        previously_active = key in store["supports"]
+        if previously_active == active:
+            return False
         if active:
-            demo_store()["supports"].add(key)
+            store["supports"].add(key)
         else:
-            demo_store()["supports"].discard(key)
-        demo_store().setdefault("events", []).append({"azione": "espressione_sostegno" if active else "ritiro_sostegno",
+            store["supports"].discard(key)
+        report = next((row for row in store["reports"] if row["id"] == report_id), None)
+        if report:
+            report["sostegni"] = max(0, report.get("sostegni", 0) + (1 if active else -1))
+        store.setdefault("events", []).append({"azione": "espressione_sostegno" if active else "ritiro_sostegno",
                                                        "utente_id": user_id, "segnalazione_id": report_id})
         return True
     with database_cursor(write=True) as cursor:
+        cursor.execute("SELECT IdSostegno, DataRitiro FROM SOSTEGNO WHERE IdUtente=%s AND IdSegnalazione=%s FOR UPDATE",
+                       (user_id, report_id))
+        previous = cursor.fetchone()
+        if (previous is not None and previous["DataRitiro"] is None) == active:
+            return False
         if active:
-            cursor.execute("""INSERT INTO SOSTEGNO (IdUtente, IdSegnalazione) VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE DataRitiro=NULL, DataEspressione=CURRENT_TIMESTAMP""",
-                (user_id, report_id))
+            if previous:
+                cursor.execute("""UPDATE SOSTEGNO SET DataRitiro=NULL, DataEspressione=CURRENT_TIMESTAMP
+                    WHERE IdSostegno=%s""", (previous["IdSostegno"],))
+            else:
+                cursor.execute("INSERT INTO SOSTEGNO (IdUtente, IdSegnalazione) VALUES (%s, %s)", (user_id, report_id))
             action = "espressione_sostegno"
         else:
             cursor.execute("UPDATE SOSTEGNO SET DataRitiro=CURRENT_TIMESTAMP WHERE IdUtente=%s AND IdSegnalazione=%s AND DataRitiro IS NULL",
                            (user_id, report_id))
             action = "ritiro_sostegno"
-        cursor.execute("SELECT IdSostegno FROM SOSTEGNO WHERE IdUtente=%s AND IdSegnalazione=%s", (user_id, report_id))
-        support = cursor.fetchone()
+        support = previous
+        if support is None:
+            cursor.execute("SELECT IdSostegno FROM SOSTEGNO WHERE IdUtente=%s AND IdSegnalazione=%s", (user_id, report_id))
+            support = cursor.fetchone()
         if support:
             cursor.execute("""INSERT INTO EVENTO_LOG
                 (IdEsecutore, TipoAzione, Esito, Dettagli, IdSegnalazione, IdSostegno)

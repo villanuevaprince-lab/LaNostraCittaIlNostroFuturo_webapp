@@ -80,6 +80,9 @@ ha verificato lo schema attualmente presente su Aiven. Prima di usare
 `APP_MODE=database`, confrontare lo schema live con `database/schema/001_full_schema.sql`
 e la migrazione, fare un backup e applicare solo le modifiche mancanti. Eseguire
 anche `database/seeds/001_reference_data.sql` se mancano i dati di riferimento.
+La migrazione `003_enforce_attachment_publication.sql` aggiunge i trigger che
+vietano la pubblicazione senza allegato e la rimozione dell'ultimo allegato
+pubblico; va applicata una volta dopo aver controllato i dati preesistenti.
 Non eseguire la migrazione alla cieca su un database già aggiornato.
 
 Impostare in locale `APP_MODE`, `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`,

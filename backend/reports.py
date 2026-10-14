@@ -26,11 +26,15 @@ def new_report():
 def get_reports():
     if request.args.get("mie") == "1" and g.user is None:
         return jsonify(error="Accesso richiesto."), 401
+    order = request.args.get("ordina", "recenti")
+    if order not in {"recenti", "sostegni"}:
+        return jsonify(error="Ordinamento non valido."), 400
     rows = list_report_records(
         request.args.get("q", "").strip()[:200],
         request.args.get("quartiere", type=int), request.args.get("categoria", type=int),
         request.args.get("stato", "").strip()[:30] or None,
         g.user["id"] if request.args.get("mie") == "1" and g.user else None,
+        order,
     )
     return jsonify(rows)
 
@@ -85,7 +89,8 @@ def put_support(report_id):
     if not report or report.get("visibilita", "pubblica") != "pubblica":
         return jsonify(error="Segnalazione non trovata."), 404
     try:
-        set_support(report_id, g.user["id"], True)
+        if not set_support(report_id, g.user["id"], True):
+            return jsonify(error="Hai già espresso sostegno a questa segnalazione."), 409
     except IntegrityError as error:
         if error.errno == 1062:
             return jsonify(error="Hai già espresso sostegno a questa segnalazione."), 409

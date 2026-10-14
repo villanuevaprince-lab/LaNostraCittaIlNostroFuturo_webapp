@@ -5,6 +5,7 @@ import mysql.connector
 import pytest
 
 from backend import database, users
+from backend.repositories.reports import create_report_record, set_support
 
 
 @pytest.fixture()
@@ -87,6 +88,36 @@ def test_search_binds_input(fake_mysql):
     sql, params = cursor.execute.call_args.args
     assert text not in sql and params == (text, *([f"%{text}%"] * 3))
     assert reports[0]["data_creazione"] == "2026-09-29T00:00:00"
+
+
+def test_active_support_is_not_recorded_twice(fake_mysql):
+    connection, cursor = fake_mysql
+    cursor.fetchone.return_value = {"IdSostegno": 7, "DataRitiro": None}
+    assert set_support(12, 42, True) is False
+    sql, params = cursor.execute.call_args.args
+    assert "FOR UPDATE" in sql and params == (42, 12)
+    assert cursor.execute.call_count == 1
+    connection.commit.assert_called_once()
+
+
+def test_publication_follows_attachment_insert_in_one_transaction(fake_mysql):
+    connection, cursor = fake_mysql
+    data = {
+        "tipo": "segnalazione", "titolo": "Lampione", "descrizione": "Lampione spento",
+        "quartiere_id": 1, "categorie": [2], "latitude": None, "longitude": None,
+        "indirizzo": "Via Roma",
+    }
+    upload = {
+        "mime": "image/jpeg", "reference": "random.jpg", "original_name": "foto.jpg",
+        "size": 42, "sha256": "a" * 64, "accessible_description": "Lampione spento",
+    }
+    result = create_report_record(data, {"id": 9}, upload)
+    queries = [call.args[0] for call in cursor.execute.call_args_list]
+    assert "'bozza'" in queries[0]
+    assert "INSERT INTO ALLEGATO" in queries[1]
+    assert "Visibilita='pubblica'" in queries[-1]
+    assert result["id"] == 42
+    connection.commit.assert_called_once()
 
 
 def test_missing_ca_fails_closed(app, monkeypatch, tmp_path):
