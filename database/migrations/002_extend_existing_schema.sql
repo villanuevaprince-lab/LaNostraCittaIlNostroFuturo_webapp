@@ -61,7 +61,7 @@ ALTER TABLE ALLEGATO
   ADD COLUMN NomeOriginale VARCHAR(255) NULL AFTER RiferimentoFile,
   ADD COLUMN DimensioneByte INT UNSIGNED NULL AFTER NomeOriginale,
   ADD COLUMN HashSHA256 CHAR(64) NULL AFTER DimensioneByte,
-  ADD CONSTRAINT uq_allegato_riferimento UNIQUE (RiferimentoFile),
+  ADD CONSTRAINT uq_allegato_riferimento UNIQUE (RiferimentoFile(768)),
   ADD INDEX idx_allegato_segnalazione (IdSegnalazione);
 
 ALTER TABLE COMMENTO

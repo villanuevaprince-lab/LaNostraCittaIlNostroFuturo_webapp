@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS ALLEGATO (
   DataCaricamento DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_allegato_segnalazione FOREIGN KEY (IdSegnalazione) REFERENCES SEGNALAZIONE (IdSegnalazione),
   CONSTRAINT fk_allegato_autore FOREIGN KEY (IdAutore) REFERENCES UTENTE (IdUtente),
-  CONSTRAINT uq_allegato_riferimento UNIQUE (RiferimentoFile),
+  CONSTRAINT uq_allegato_riferimento UNIQUE (RiferimentoFile(768)),
   INDEX idx_allegato_segnalazione (IdSegnalazione)
 ) ENGINE=InnoDB;
 

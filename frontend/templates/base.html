@@ -18,20 +18,20 @@
       <span class="tagline">Il Nostro Futuro</span>
     </div>
     <nav aria-label="Navigazione principale">
-      <a href="/">Home</a>
-      <a href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
+      <a class="nav-link" href="/">Home</a>
+      <a class="nav-link" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
       {% if g.user %}
         <span class="nav-user">Ciao, {{ g.user.nome }}</span>
-        <a href="{{ url_for('pages.profile') }}">Profilo</a>
-        <a href="{{ url_for('pages.dashboard') }}">Dashboard</a>
-        {% if g.user.is_moderator %}<a href="{{ url_for('pages.moderation') }}">Moderazione</a>{% endif %}
+        <a class="nav-link" href="{{ url_for('pages.profile') }}">Profilo</a>
+        <a class="nav-link" href="{{ url_for('pages.dashboard') }}">Dashboard</a>
+        {% if g.user.is_moderator %}<a class="nav-link" href="{{ url_for('pages.moderation') }}">Moderazione</a>{% endif %}
         <form class="inline-form" method="post" action="{{ url_for('auth_api.logout_api') }}" data-api-action>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="button-link" type="submit">Esci</button>
         </form>
       {% else %}
-        <a href="{{ url_for('auth.login') }}">Accedi</a>
-        <a class="button button-secondary" href="{{ url_for('auth.register') }}">Registrati</a>
+        <a class="nav-link" href="{{ url_for('auth.login') }}">Accedi</a>
+        <a class="button button-secondary nav-cta" href="{{ url_for('auth.register') }}">Registrati</a>
       {% endif %}
     </nav>
   </header>
