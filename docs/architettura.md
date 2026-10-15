@@ -26,7 +26,7 @@ l'invio, la pagina mostra una conferma e riporta alla home.
 ```text
 backend/
 ├── api/             # endpoint JSON per auth e cataloghi
-├── repositories/    # query SQL e modalità demo
+├── repositories/    # query SQL verso MySQL
 ├── services/        # regole di validazione e casi d'uso
 ├── app.py           # application factory, errori e intestazioni
 ├── auth.py          # form HTML di login e registrazione
@@ -66,7 +66,7 @@ restano NULL.
 
 Sostegni, commenti, stato e moderazione usano endpoint autenticati dove
 necessario; cambi di stato, blocchi e azioni moderate scrivono il log previsto
-dallo schema. La modalità demo usa uno store in memoria isolato per app/test.
+dallo schema. I test simulano il driver MySQL senza collegarsi ad Aiven.
 
 Il pool MySQL viene creato solo quando la modalità database lo richiede. La
 connessione richiede variabili DB e certificato CA; verifica certificato e
@@ -77,7 +77,7 @@ identità TLS. Nessuna migrazione viene eseguita all'avvio.
 `database/migrations/002_extend_existing_schema.sql` è una migrazione manuale
 una tantum per lo schema iniziale fornito; non è idempotente. Il progetto non
 ha verificato lo schema attualmente presente su Aiven. Prima di usare
-`APP_MODE=database`, confrontare lo schema live con `database/schema/001_full_schema.sql`
+la connessione, confrontare lo schema live con `database/schema/001_full_schema.sql`
 e la migrazione, fare un backup e applicare solo le modifiche mancanti. Eseguire
 anche `database/seeds/001_reference_data.sql` se mancano i dati di riferimento.
 La migrazione `003_enforce_attachment_publication.sql` aggiunge i trigger che
@@ -85,10 +85,11 @@ vietano la pubblicazione senza allegato e la rimozione dell'ultimo allegato
 pubblico; va applicata una volta dopo aver controllato i dati preesistenti.
 Non eseguire la migrazione alla cieca su un database già aggiornato.
 
-Impostare in locale `APP_MODE`, `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`,
+Impostare in locale `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`,
 `DB_USER`, `DB_PASSWORD`, `DB_SSL_CA_PATH` e, se serve, `UPLOAD_FOLDER`.
-Credenziali e certificati restano fuori da Git. L'app usa per default la modalità
-database; la demo si abilita soltanto con `APP_MODE=demo`.
+Credenziali e certificati restano fuori da Git. L'app usa sempre MySQL;
+`APP_MODE=demo` non è supportato. Gli allegati restano su disco: serve un
+`UPLOAD_FOLDER` su volume persistente per conservarli fra installazioni.
 
 ## Limiti operativi
 

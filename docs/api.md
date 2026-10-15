@@ -43,8 +43,7 @@ imposta stato `cancellato`, registra l'evento e termina il cookie corrente.
 
 ### `GET /api/quartieri`, `GET /api/categorie`, `GET /api/stati`
 
-Restituiscono i cataloghi attivi. Quartieri e categorie provengono da MySQL;
-la modalità demo usa un catalogo in memoria.
+Restituiscono i cataloghi attivi. Quartieri e categorie provengono da MySQL.
 
 ### `GET /api/segnalazioni`
 

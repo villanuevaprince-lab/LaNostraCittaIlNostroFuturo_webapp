@@ -322,3 +322,11 @@ per sviluppo e test; le credenziali MySQL non sono state configurate.
 occorre verificare gli allegati delle righe già pubbliche, fare un backup e
 controllare che i quattro trigger non esistano. Non è stata aperta alcuna
 connessione Aiven. Il database non è stato migrato in questa revisione.
+
+## 10. Aggiornamento successivo: applicazione solo MySQL
+
+Le sezioni precedenti descrivono lo stato al momento della rispettiva revisione.
+La modalità demo e lo store in memoria sono stati rimossi: tutte le operazioni
+su utenti, cataloghi e segnalazioni usano MySQL. I test simulano il repository
+e il driver, senza collegarsi al database Aiven. Foto e video richiedono
+`UPLOAD_FOLDER` su un volume persistente per sopravvivere ai nuovi deployment.

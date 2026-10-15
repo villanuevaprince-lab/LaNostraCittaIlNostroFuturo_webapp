@@ -3,6 +3,7 @@
 import os
 import secrets
 from datetime import timedelta
+from pathlib import Path
 
 import mysql.connector
 from dotenv import load_dotenv
@@ -11,12 +12,15 @@ from flask_wtf.csrf import CSRFError
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash
 
-from backend.database import ROOT_DIR, init_demo_store
+from backend.database import ROOT_DIR
 from backend.security import csrf, limiter, load_current_user
 
 
 def create_app(test_config=None):
     load_dotenv(ROOT_DIR / ".env")
+    upload_folder = Path(os.getenv("UPLOAD_FOLDER", "storage/uploads"))
+    if not upload_folder.is_absolute():
+        upload_folder = ROOT_DIR / upload_folder
     app = Flask(
         __name__,
         template_folder=str(ROOT_DIR / "frontend" / "templates"),
@@ -24,8 +28,6 @@ def create_app(test_config=None):
         static_url_path="/static",
     )
     app.config.from_mapping(
-        # Aiven/MySQL è la modalità normale; la demo deve essere scelta esplicitamente.
-        APP_MODE=os.getenv("APP_MODE", "database"),
         SECRET_KEY=os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET"),
         SESSION_COOKIE_NAME="nostra_citta_session",
         SESSION_COOKIE_HTTPONLY=True,
@@ -35,25 +37,21 @@ def create_app(test_config=None):
         SESSION_REFRESH_EACH_REQUEST=False,
         WTF_CSRF_TIME_LIMIT=3600,
         MAX_CONTENT_LENGTH=21 * 1024 * 1024,
-        UPLOAD_FOLDER=os.getenv("UPLOAD_FOLDER", str(ROOT_DIR / "storage" / "uploads")),
+        UPLOAD_FOLDER=str(upload_folder.resolve()),
         RATELIMIT_STORAGE_URI=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
         RATELIMIT_HEADERS_ENABLED=True,
     )
     if test_config:
         app.config.update(test_config)
-    if app.config["APP_MODE"] not in {"demo", "database"}:
-        raise RuntimeError("APP_MODE deve essere demo oppure database.")
+    if os.getenv("APP_MODE", "database") != "database":
+        raise RuntimeError("La modalità demo non è disponibile. Rimuovi APP_MODE=demo dal file .env.")
 
     secret = app.config["SECRET_KEY"]
     if not secret:
-        if app.config["APP_MODE"] == "database":
-            raise RuntimeError("Imposta SECRET_KEY nel file .env (almeno 32 caratteri casuali).")
-        # Solo demo: chiave effimera; al riavvio le sessioni non sono più valide.
-        app.config["SECRET_KEY"] = secrets.token_hex(32)
+        raise RuntimeError("Imposta SECRET_KEY nel file .env (almeno 32 caratteri casuali).")
     elif len(secret) < 32 or secret.startswith("replace-with"):
         raise RuntimeError("SECRET_KEY deve contenere almeno 32 caratteri casuali.")
 
-    init_demo_store(app)
     # Un hash fittizio rende simile il costo del login anche per email inesistenti.
     app.extensions["dummy_password_hash"] = generate_password_hash(secrets.token_urlsafe(32))
     app.before_request(load_current_user)
@@ -116,6 +114,6 @@ def create_app(test_config=None):
 if __name__ == "__main__":
     create_app().run(
         host=os.getenv("HOST", "127.0.0.1"),
-        port=int(os.getenv("PORT", "11562")),
+        port=int(os.getenv("PORT", "5000")),
         debug=os.getenv("FLASK_DEBUG", "0") == "1",
     )
