@@ -58,7 +58,8 @@ Pubblico. Parametri facoltativi:
 - `mie=1`: contenuti dell'utente autenticato.
 
 Risultati limitati a 100; l'ordinamento per sostegni usa data e ID come
-discriminanti. Il primo allegato include ID, MIME e descrizione accessibile.
+discriminanti. Ogni riga include `sostegni`, `commenti_count`, `sostenuta`
+per l'utente corrente e ID, MIME e descrizione del primo allegato.
 Non include email/hash.
 
 ### `POST /api/segnalazioni`
@@ -71,11 +72,9 @@ Richiede sessione, CSRF e `multipart/form-data`. Campi:
 | `titolo` | 3–200 caratteri |
 | `descrizione` | 10–5000 caratteri |
 | `quartiere_id` | ID di un quartiere attivo |
-| `categorie` | Da 1 a 5 ID categoria attivi; ripetere il campo |
+| `categoria_id` | Un ID categoria attiva, scelto dal menu a tendina |
 | `indirizzo` | Facoltativo, massimo 255 caratteri |
-| `latitude`, `longitude` | Entrambe facoltative; range -90..90 e -180..180 |
 | `allegato` | Obbligatorio; JPEG, PNG, WebP, MP4 o WebM; massimo 20 MB |
-| `descrizione_accessibile` | Obbligatoria, massimo 500 caratteri |
 
 Esempio browser:
 
@@ -95,8 +94,10 @@ la visibilità diventa pubblica solo dopo l'allegato. Se il DB fallisce,
 il file appena scritto viene eliminato. La risposta è `201` e include la
 destinazione `/` con messaggio flash di conferma.
 
-Le immagini sono decodificate con Pillow, verificate, EXIF GPS valido può
-riempire coordinate assenti, quindi l'immagine è risalvata senza EXIF. I video
+Le coordinate non sono raccolte dal form né lette dall'EXIF: le nuove righe
+usano NULL. La colonna `DescrizioneAccessibile` esistente viene compilata
+automaticamente con il tipo di media e il titolo (non descrive dettagli visivi
+non verificabili). Le immagini sono risalvate senza EXIF. I video
 sono controllati tramite firme file MP4/WebM, non solo nome/estensione.
 
 ### `GET /api/segnalazioni/<id>`
@@ -115,9 +116,10 @@ un nome casuale generato dal server e viene confinato nella directory upload.
   1–3000 caratteri. `201` a successo.
 - `GET /api/segnalazioni/<id>/sostegno`: sessione, restituisce `sostenuta` boolean.
 - `PUT /api/segnalazioni/<id>/sostegno`: sessione + CSRF, esprime o riattiva il
-  sostegno; il vincolo unico impedisce righe duplicate e un sostegno già attivo
-  restituisce `409`.
+  sostegno; il vincolo unico impedisce duplicati.
 - `DELETE /api/segnalazioni/<id>/sostegno`: sessione + CSRF, valorizza `DataRitiro`.
+  Entrambe le mutazioni sono idempotenti e restituiscono `sostenuta` e
+  `sostegni` aggiornati; solo i cambiamenti effettivi creano un evento audit.
 
 ## Moderazione
 

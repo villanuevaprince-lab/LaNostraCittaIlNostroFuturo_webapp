@@ -176,12 +176,21 @@ textarea:focus {
   gap: 18px;
 }
 
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
 .report-card {
   padding: 22px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: #fbfdfc;
   overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
 }
 
 .report-card h3 {
@@ -248,8 +257,13 @@ nav a, .back-link, .auth-note a {
 .auth-panel { max-width: 600px; margin: 24px auto; }
 .auth-note { margin-top: 20px; margin-bottom: 0; }
 .field { display: grid; gap: 7px; }
-.filter-row { margin-bottom: 18px; }
-.report-image { display: block; max-width: 100%; max-height: 320px; object-fit: contain; border-radius: 12px; margin-block: 14px; }
+.report-image { display: block; width: 100%; max-height: 300px; object-fit: cover; border-radius: 12px; margin-block: 14px; }
+.report-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: auto; padding-top: 16px; }
+.support-count { color: var(--primary-dark); font-weight: 800; }
+.action-status { flex-basis: 100%; min-height: 1.3em; margin: 0; }
+.comment-list { list-style: none; padding: 0; margin: 14px 0 0; }
+.comment-item { border-top: 1px solid var(--border); padding: 12px 0; }
+.comment-item p { margin: 4px 0 0; white-space: pre-wrap; }
 .report-card details { margin-top: 14px; }
 .report-card summary { cursor: pointer; font-weight: 700; }
 .report-card details form { margin-top: 14px; }
@@ -289,4 +303,10 @@ textarea { resize: vertical; }
     flex-direction: column;
     gap: 2px;
   }
+
+  .filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 480px) {
+  .filter-row { grid-template-columns: 1fr; }
 }

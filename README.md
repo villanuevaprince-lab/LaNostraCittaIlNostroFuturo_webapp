@@ -2,7 +2,8 @@
 
 Webapp Flask per segnalazioni e proposte civiche. Il backend espone API JSON;
 il frontend usa HTML, CSS responsive e moduli JavaScript vanilla. Il progetto
-usa MySQL 8 quando configurato e include una modalità demo in memoria.
+legge e scrive MySQL 8 su Aiven per impostazione predefinita; una modalità demo
+in memoria resta disponibile soltanto se selezionata esplicitamente.
 
 ## Funzioni
 
@@ -10,16 +11,17 @@ usa MySQL 8 quando configurato e include una modalità demo in memoria.
   preesistenti vengono verificati e aggiornati al login.
 - Cookie di sessione HttpOnly, SameSite=Lax, CSRF per le richieste mutative e
   limiti per login/registrazione.
-- Bacheca con ricerca per testo, quartiere, categoria e stato; ordine cronologico
-  oppure classifica per sostegni attivi.
+- Bacheca con ricerca per testo, quartiere, categoria e stato; ordine per data
+  o sostegni attivi e conteggio dei commenti visibile sulle schede.
 - Pagina profilo con modifica dei dati e cancellazione logica dell'account.
-- Pagina dedicata per nuove segnalazioni: quartiere, una o più categorie,
-  posizione, foto/video obbligatorio e descrizione accessibile.
+- Pagina dedicata per nuove segnalazioni: quartiere, una categoria dal menu,
+  indirizzo facoltativo e foto/video obbligatorio. Le coordinate restano NULL
+  e il testo tecnico dell'allegato viene compilato automaticamente dal titolo.
 - Validazione upload JPEG/PNG/WebP/MP4/WebM fino a 20 MB. Le immagini sono
-  verificate con Pillow, le coordinate EXIF valide possono compilare la
-  posizione e l'immagine viene risalvata senza metadati EXIF.
-- Commenti e sostegni con controllo account e CSRF; un sostegno già attivo
-  restituisce `409`, mentre quello ritirato può essere riattivato.
+  verificate con Pillow e risalvate senza metadati EXIF; non si estraggono
+  coordinate GPS.
+- Commenti pubblici visibili anche agli ospiti; pubblicazione e sostegno
+  richiedono account e CSRF. I sostegni ripetuti sono idempotenti.
 - Area moderazione protetta da ruolo DB: stato e visibilità dei contenuti,
   rimozione commenti e blocco/sblocco account con eventi di audit.
 - Storico stato, evento di pubblicazione e allegato salvati nella stessa
@@ -42,7 +44,7 @@ usa MySQL 8 quando configurato e include una modalità demo in memoria.
 | `database/` | Schema completo, estensione del DB esistente e seed di riferimento |
 | `backend/tests/` | Test con Flask test client e connessione MySQL vietata |
 
-## Avvio demo
+## Avvio locale
 
 Richiesti Python 3.11 o superiore e pip.
 
@@ -50,18 +52,27 @@ Richiesti Python 3.11 o superiore e pip.
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
+cp .env.example .env
+# Compila .env con SECRET_KEY, DB_HOST, DB_PORT, DB_USER e DB_PASSWORD;
+# copia il certificato CA Aiven in certificates/ca.pem.
 python -m backend.app
 ```
 
-Su Windows PowerShell attiva l'ambiente con `.venv\Scripts\Activate.ps1`.
-Apri <http://localhost:5000>. La demo non contiene account predefiniti: crea
-un account dalla pagina di registrazione. Gli utenti e i contenuti demo sono
-in memoria e scompaiono al riavvio. Non usare la demo come deployment.
+Su Windows PowerShell attiva l'ambiente con `.venv\Scripts\Activate.ps1`, copia
+`.env.example` in `.env` con `Copy-Item .env.example .env` e avvia sempre dalla
+radice con `python -m backend.app` (non `python backend/app.py`). Apri
+<http://localhost:5000>; `GET /api/health` restituisce `ok` solo se la
+connessione MySQL è effettiva. Senza credenziali o certificato CA la modalità
+database non ripiega su dati dimostrativi e risponde `503`.
+
+Per una prova isolata senza Aiven imposta `APP_MODE=demo` nel `.env`. La demo non
+contiene account predefiniti: registrane uno. Utenti e contenuti scompaiono al
+riavvio; non usare questa modalità come deployment.
 
 ## Configurazione MySQL Aiven esistente
 
 1. Crea `.env` copiando `.env.example`; `.env` è escluso da Git.
-2. Imposta `APP_MODE=database`, una `SECRET_KEY` casuale di almeno 32 caratteri,
+2. Lascia `APP_MODE=database`, imposta una `SECRET_KEY` casuale di almeno 32 caratteri,
    i parametri `DB_*` e `DB_SSL_CA_PATH`. Inserisci localmente le credenziali.
 3. Verifica lo schema reale e crea un backup prima di qualsiasi DDL.
 4. Se il DB contiene solo lo schema iniziale, applica **una sola volta**
@@ -82,8 +93,16 @@ in memoria e scompaiono al riavvio. Non usare la demo come deployment.
 5. Se quartieri, stati, categorie, storico, allegati estesi e tabelle ponte sono
    già presenti, non rilanciare la migrazione 002: confronta lo schema e, se
    serve, esegui il seed idempotente e la migrazione 003 solo se mancano i trigger.
+   Il seed aggiunge gli 88 NIL del Comune di
+   Milano e rende inattivi i nove raggruppamenti generici del vecchio seed,
+   senza cancellare righe o alterare i riferimenti delle segnalazioni esistenti.
 6. Avvia l'app. La connessione richiede il certificato CA e verifica certificato
    e hostname TLS. L'app non esegue migrazioni automatiche.
+
+Gli 88 NIL provengono dal dataset pubblico DS964 del Comune di Milano:
+<https://dati.comune.milano.it/dataset/e8e765fc-d882-40b8-95d8-16ff3d39eb7c>.
+Non mettere password, certificato CA o `.env` nel repository; il seed SQL si
+applica manualmente al tuo database, preferibilmente dopo un backup.
 
 `database/schema/001_full_schema.sql` serve a creare un **database nuovo** e
 non deve essere eseguito sopra il DB Aiven popolato. Gli utenti del seed con
@@ -112,7 +131,7 @@ Le richieste che modificano dati richiedono il token CSRF nell'header
 | `POST /api/segnalazioni` | Sessione | `multipart/form-data`, allegato obbligatorio |
 | `GET /api/segnalazioni/<id>` | Pubblico | Dettaglio e commenti |
 | `POST /api/segnalazioni/<id>/commenti` | Sessione | Pubblica un commento |
-| `GET/PUT/DELETE /api/segnalazioni/<id>/sostegno` | Sessione | Legge, esprime o ritira sostegno; duplicato attivo `409` |
+| `GET/PUT/DELETE /api/segnalazioni/<id>/sostegno` | Sessione | Legge, esprime o ritira sostegno (richieste ripetute idempotenti) |
 | `GET /api/allegati/<id>` | Pubblico se segnalazione pubblica | Scarica allegato controllato |
 | `PATCH /api/segnalazioni/<id>/stato` | Moderatore | Transizione di stato e storico |
 | `/api/moderazione/*` | Moderatore | Visibilità, commenti e blocchi |

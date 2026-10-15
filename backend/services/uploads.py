@@ -5,7 +5,7 @@ from pathlib import Path
 import hashlib
 import secrets
 
-from PIL import ExifTags, Image, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from flask import current_app
 
 
@@ -32,28 +32,7 @@ def _mime_from_signature(data):
     return None
 
 
-def _fraction(value):
-    return float(value[0]) / float(value[1]) if isinstance(value, tuple) else float(value)
-
-
-def _gps_coordinates(exif):
-    try:
-        gps = exif.get_ifd(34853)
-        tags = {ExifTags.GPSTAGS.get(k, k): v for k, v in gps.items()}
-        lat = sum(_fraction(v) / (60 ** i) for i, v in enumerate(tags["GPSLatitude"]))
-        lon = sum(_fraction(v) / (60 ** i) for i, v in enumerate(tags["GPSLongitude"]))
-        if tags.get("GPSLatitudeRef") == "S":
-            lat = -lat
-        if tags.get("GPSLongitudeRef") == "W":
-            lon = -lon
-        if -90 <= lat <= 90 and -180 <= lon <= 180:
-            return round(lat, 6), round(lon, 6)
-    except (KeyError, TypeError, ValueError, ZeroDivisionError, AttributeError):
-        pass
-    return None, None
-
-
-def save_upload(file_storage, accessible_description):
+def save_upload(file_storage, report_title):
     if file_storage is None or not file_storage.filename:
         raise UploadError("Allega una foto o un breve video.")
     raw = file_storage.stream.read(MAX_FILE_BYTES + 1)
@@ -64,7 +43,6 @@ def save_upload(file_storage, accessible_description):
     mime = _mime_from_signature(raw)
     if mime not in IMAGE_TYPES and mime not in VIDEO_TYPES:
         raise UploadError("Formato non supportato: usa JPEG, PNG, WebP, MP4 o WebM.")
-    latitude = longitude = None
     if mime in IMAGE_TYPES:
         try:
             image = Image.open(BytesIO(raw))
@@ -72,7 +50,6 @@ def save_upload(file_storage, accessible_description):
             image = Image.open(BytesIO(raw))
             if image.width * image.height > 40_000_000:
                 raise UploadError("L'immagine ha dimensioni eccessive.")
-            latitude, longitude = _gps_coordinates(image.getexif())
             # Risalvare rimuove EXIF e metadati potenzialmente privati.
             cleaned = BytesIO()
             fmt = {"image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WEBP"}[mime]
@@ -86,9 +63,10 @@ def save_upload(file_storage, accessible_description):
             if isinstance(error, UploadError):
                 raise
             raise UploadError("Il file immagine non è valido.") from error
-    description = (accessible_description or "").strip()
-    if not description or len(description) > 500:
-        raise UploadError("Aggiungi una descrizione accessibile (massimo 500 caratteri).")
+    # La colonna legacy è NOT NULL: testo onesto, senza inventare il contenuto
+    # visivo che non possiamo dedurre automaticamente dall'immagine.
+    medium = "Foto" if mime in IMAGE_TYPES else "Video"
+    description = f"{medium} allegato a: {report_title}"
 
     root = Path(current_app.config["UPLOAD_FOLDER"]).resolve()
     root.mkdir(mode=0o750, parents=True, exist_ok=True)
@@ -102,7 +80,6 @@ def save_upload(file_storage, accessible_description):
         "original_name": Path(file_storage.filename).name[:255],
         "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
         "accessible_description": description,
-        "latitude": latitude, "longitude": longitude,
     }
 
 

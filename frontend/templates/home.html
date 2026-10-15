@@ -7,7 +7,7 @@
     <div>
       <p class="eyebrow">Partecipazione civica</p>
       <h1>Miglioriamo insieme la nostra città</h1>
-      <p>Consulta le segnalazioni dei cittadini oppure proponi una nuova idea.</p>
+      <p>Scopri cosa succede nei quartieri di Milano, partecipa alla discussione e sostieni le idee che contano per te.</p>
     </div>
     <a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
   </section>
@@ -21,7 +21,7 @@
         <input id="search-input" type="search" maxlength="200" placeholder="Titolo, descrizione o luogo">
       </label>
     </div>
-    <div class="form-row filter-row">
+    <div class="filter-row">
       <label class="field">Quartiere<select id="filter-neighborhood"><option value="">Tutti i quartieri</option></select></label>
       <label class="field">Categoria<select id="filter-category"><option value="">Tutte le categorie</option></select></label>
       <label class="field">Stato<select id="filter-state">

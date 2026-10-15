@@ -92,11 +92,11 @@ def test_search_binds_input(fake_mysql):
 
 def test_active_support_is_not_recorded_twice(fake_mysql):
     connection, cursor = fake_mysql
-    cursor.fetchone.return_value = {"IdSostegno": 7, "DataRitiro": None}
-    assert set_support(12, 42, True) is False
-    sql, params = cursor.execute.call_args.args
+    cursor.fetchone.side_effect = [{"IdSostegno": 7, "DataRitiro": None}, {"sostegni": 1}]
+    assert set_support(12, 42, True) == {"sostenuta": True, "sostegni": 1}
+    sql, params = cursor.execute.call_args_list[0].args
     assert "FOR UPDATE" in sql and params == (42, 12)
-    assert cursor.execute.call_count == 1
+    assert cursor.execute.call_count == 2
     connection.commit.assert_called_once()
 
 
@@ -127,6 +127,23 @@ def test_missing_ca_fails_closed(app, monkeypatch, tmp_path):
     monkeypatch.setenv("DB_SSL_CA_PATH", str(tmp_path / "missing.pem"))
     with pytest.raises(mysql.connector.InterfaceError, match="CA"):
         database.get_connection()
+
+
+def test_health_checks_database_connection(fake_mysql, client):
+    connection, cursor = fake_mysql
+    assert client.get("/api/health").get_json() == {"status": "ok", "database": "aiven"}
+    assert cursor.execute.call_args.args == ("SELECT 1 AS pronto",)
+    connection.close.assert_called_once()
+
+
+def test_repeated_support_does_not_write_an_audit_event(fake_mysql):
+    connection, cursor = fake_mysql
+    cursor.fetchone.side_effect = [
+        {"IdSostegno": 17, "DataRitiro": None}, {"sostegni": 1},
+    ]
+    assert set_support(3, 5, True) == {"sostenuta": True, "sostegni": 1}
+    assert cursor.execute.call_count == 2  # lock + count; nessuna scrittura
+    assert all("EVENTO_LOG" not in call.args[0] for call in cursor.execute.call_args_list)
 
 
 def test_db_outage_does_not_leak_credentials(client, app, monkeypatch):

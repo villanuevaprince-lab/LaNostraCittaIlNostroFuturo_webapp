@@ -34,27 +34,18 @@
           <option value="">Caricamento quartieri…</option>
         </select>
       </label>
-      <label class="field">Categorie (scegline da una a cinque)
-        <select name="categorie" id="category-select" multiple size="5" required aria-describedby="category-help">
+      <label class="field">Categoria
+        <select name="categoria_id" id="category-select" required>
           <option value="">Caricamento categorie…</option>
         </select>
       </label>
-      <small id="category-help">Su computer usa Ctrl o Cmd per selezioni multiple.</small>
       <label class="field">Indirizzo
         <input name="indirizzo" maxlength="255" autocomplete="street-address">
       </label>
-      <div class="form-row">
-        <label class="field">Latitudine <input name="latitude" type="number" min="-90" max="90" step="any"></label>
-        <label class="field">Longitudine <input name="longitude" type="number" min="-180" max="180" step="any"></label>
-      </div>
       <label class="field">Foto o video (obbligatorio)
         <input name="allegato" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
       </label>
       <small>Massimo 20 MB. Formati: JPEG, PNG, WebP, MP4 o WebM.</small>
-      <label class="field">Descrizione accessibile dell'allegato
-        <textarea name="descrizione_accessibile" maxlength="500" rows="3" required
-                  placeholder="Descrivi in modo semplice cosa mostra la foto o il video"></textarea>
-      </label>
       <button class="button" type="submit">Pubblica</button>
       <p data-form-status class="status" role="status" aria-live="polite"></p>
       <a class="back-link" href="/">Annulla e torna alla home</a>

@@ -7,10 +7,9 @@ async function fillSelect(url, select, emptyLabel) {
   if (!response.ok) throw new Error("Impossibile caricare le opzioni del modulo.");
   const rows = await response.json();
   select.replaceChildren();
+  select.add(new Option(`Seleziona ${emptyLabel}`, ""));
   if (!rows.length) {
-    const option = new Option(emptyLabel, "");
-    option.disabled = true;
-    select.add(option);
+    select.options[0].textContent = `Nessun ${emptyLabel} disponibile`;
     select.disabled = true;
     return;
   }
@@ -18,18 +17,13 @@ async function fillSelect(url, select, emptyLabel) {
 }
 
 Promise.all([
-  fillSelect("/api/quartieri", document.querySelector("#neighborhood-select"), "Nessun quartiere disponibile"),
-  fillSelect("/api/categorie", document.querySelector("#category-select"), "Nessuna categoria disponibile"),
+  fillSelect("/api/quartieri", document.querySelector("#neighborhood-select"), "quartiere"),
+  fillSelect("/api/categorie", document.querySelector("#category-select"), "categoria"),
 ]).catch((error) => { status.textContent = error.message; });
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!form.reportValidity()) return;
-  const categories = [...document.querySelector("#category-select").selectedOptions];
-  if (categories.length < 1 || categories.length > 5) {
-    status.textContent = "Seleziona da una a cinque categorie.";
-    return;
-  }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   form.setAttribute("aria-busy", "true");

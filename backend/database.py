@@ -10,6 +10,7 @@ from threading import Lock, RLock
 import mysql.connector
 from mysql.connector.pooling import MySQLConnectionPool
 from flask import current_app
+from backend.neighborhoods import MILAN_NIL
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -18,19 +19,20 @@ DEMO_REPORTS = [
         "id": 1, "tipo": "segnalazione", "titolo": "Buca sul marciapiede",
         "descrizione": "Una buca rende difficile il passaggio dei pedoni.",
         "stato": "aperta", "indirizzo": "Via Torino, Milano", "autore": "Marco Rossi",
-        "data_creazione": "2026-09-10T08:45:00", "sostegni": 2,
+        "quartiere_id": 1, "categorie": [3],
+        "data_creazione": "2026-09-10T08:45:00", "sostegni": 0,
     },
     {
         "id": 2, "tipo": "proposta", "titolo": "Nuove rastrelliere per biciclette",
         "descrizione": "Installare rastrelliere vicino agli ingressi delle scuole.",
         "stato": "in_valutazione", "indirizzo": "Milano", "autore": "Giulia Bianchi",
-        "data_creazione": "2026-09-12T15:00:00", "sostegni": 5,
+        "quartiere_id": 22, "categorie": [2],
+        "data_creazione": "2026-09-12T15:00:00", "sostegni": 0,
     },
 ]
 DEMO_NEIGHBORHOODS = [
-    {"id": 1, "nome": "Centro Storico", "municipio": 1},
-    {"id": 2, "nome": "Città Studi - Lambrate - Venezia", "municipio": 3},
-    {"id": 3, "nome": "Baggio - De Angeli - San Siro", "municipio": 7},
+    {"id": number, "nome": name, "municipio": None}
+    for number, name in enumerate(MILAN_NIL, start=1)
 ]
 DEMO_CATEGORIES = [
     {"id": 1, "nome": "Ambiente", "descrizione": "Verde e tutela ambientale.", "colore": "#2E7D32"},

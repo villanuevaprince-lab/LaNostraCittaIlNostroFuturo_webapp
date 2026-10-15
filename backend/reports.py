@@ -34,6 +34,7 @@ def get_reports():
         request.args.get("quartiere", type=int), request.args.get("categoria", type=int),
         request.args.get("stato", "").strip()[:30] or None,
         g.user["id"] if request.args.get("mie") == "1" and g.user else None,
+        g.user["id"] if g.user else None,
         order,
     )
     return jsonify(rows)
@@ -45,7 +46,6 @@ def post_report():
     if not request.mimetype or not request.mimetype.startswith("multipart/form-data"):
         return jsonify(error="Invia il form multipart con un allegato."), 400
     data = request.form.to_dict()
-    data["categorie"] = request.form.getlist("categorie")
     try:
         report = create_report(data, author=g.user, uploaded_file=request.files.get("allegato"))
     except (ReportValidationError, UploadError) as error:
@@ -89,26 +89,29 @@ def put_support(report_id):
     if not report or report.get("visibilita", "pubblica") != "pubblica":
         return jsonify(error="Segnalazione non trovata."), 404
     try:
-        if not set_support(report_id, g.user["id"], True):
-            return jsonify(error="Hai già espresso sostegno a questa segnalazione."), 409
+        summary = set_support(report_id, g.user["id"], True)
     except IntegrityError as error:
         if error.errno == 1062:
             return jsonify(error="Hai già espresso sostegno a questa segnalazione."), 409
         raise
-    return jsonify(ok=True), 200
+    return jsonify(ok=True, **summary), 200
 
 
 @reports.delete("/api/segnalazioni/<int:report_id>/sostegno")
 @login_required
 def delete_support(report_id):
-    set_support(report_id, g.user["id"], False)
-    return jsonify(ok=True)
+    report = get_report_record(report_id)
+    if not report or report.get("visibilita", "pubblica") != "pubblica":
+        return jsonify(error="Segnalazione non trovata."), 404
+    summary = set_support(report_id, g.user["id"], False)
+    return jsonify(ok=True, **summary)
 
 
 @reports.get("/api/segnalazioni/<int:report_id>/sostegno")
 @login_required
 def get_support(report_id):
-    if not get_report_record(report_id):
+    report = get_report_record(report_id)
+    if not report or report.get("visibilita", "pubblica") != "pubblica":
         return jsonify(error="Segnalazione non trovata."), 404
     return jsonify(sostenuta=user_supports(report_id, g.user["id"]))
 

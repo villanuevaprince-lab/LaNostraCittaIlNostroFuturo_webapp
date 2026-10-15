@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, redirect, render_template
 
-from backend.database import database_enabled
+from backend.database import database_cursor, database_enabled
 from backend.security import login_required, role_required
 
 
@@ -37,5 +37,9 @@ def moderation():
 
 @pages.get("/api/health")
 def health():
-    # Indica la configurazione, non esegue una connessione o una migrazione Aiven.
+    if database_enabled():
+        # Una risposta positiva certifica la connessione reale, non soltanto APP_MODE.
+        with database_cursor() as cursor:
+            cursor.execute("SELECT 1 AS pronto")
+            cursor.fetchone()
     return jsonify(status="ok", database="aiven" if database_enabled() else "demo")

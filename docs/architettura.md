@@ -56,13 +56,13 @@ interne previste.
 
 ## Segnalazioni, allegati e database
 
-Il service valida i campi, i quartieri e le categorie attive, verifica coordinate
-e allegato, poi il repository inserisce segnalazione, allegato, categorie,
+Il service valida i campi, il quartiere e la categoria attiva, verifica
+l'allegato senza estrarre coordinate, poi il repository inserisce segnalazione, allegato, categoria,
 storico iniziale ed evento di audit nella stessa transazione MySQL. Se il
 salvataggio DB fallisce, il file viene rimosso. Gli upload hanno limite 20 MB,
 nomi casuali, verifica della firma e, per le immagini, decodifica e riscrittura
-Pillow per rimuovere metadati EXIF. Coordinate GPS EXIF possono precompilare la
-posizione.
+Pillow per rimuovere metadati EXIF. Le coordinate delle nuove segnalazioni
+restano NULL.
 
 Sostegni, commenti, stato e moderazione usano endpoint autenticati dove
 necessario; cambi di stato, blocchi e azioni moderate scrivono il log previsto
@@ -88,7 +88,7 @@ Non eseguire la migrazione alla cieca su un database già aggiornato.
 Impostare in locale `APP_MODE`, `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`,
 `DB_USER`, `DB_PASSWORD`, `DB_SSL_CA_PATH` e, se serve, `UPLOAD_FOLDER`.
 Credenziali e certificati restano fuori da Git. L'app usa per default la modalità
-demo finché `APP_MODE=database` non è configurato.
+database; la demo si abilita soltanto con `APP_MODE=demo`.
 
 ## Limiti operativi
 

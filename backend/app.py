@@ -24,7 +24,8 @@ def create_app(test_config=None):
         static_url_path="/static",
     )
     app.config.from_mapping(
-        APP_MODE=os.getenv("APP_MODE", "demo"),
+        # Aiven/MySQL è la modalità normale; la demo deve essere scelta esplicitamente.
+        APP_MODE=os.getenv("APP_MODE", "database"),
         SECRET_KEY=os.getenv("SECRET_KEY") or os.getenv("SESSION_SECRET"),
         SESSION_COOKIE_NAME="nostra_citta_session",
         SESSION_COOKIE_HTTPONLY=True,

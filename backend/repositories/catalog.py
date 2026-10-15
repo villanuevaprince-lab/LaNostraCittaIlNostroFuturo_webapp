@@ -3,7 +3,7 @@ from backend.database import database_cursor, database_enabled, demo_store
 
 def list_neighborhoods():
     if not database_enabled():
-        return demo_store()["quartieri"]
+        return sorted(demo_store()["quartieri"], key=lambda row: row["nome"])
     with database_cursor() as cursor:
         cursor.execute("""SELECT IdQuartiere AS id, Nome AS nome, Municipio AS municipio
                           FROM QUARTIERE WHERE Attivo = TRUE ORDER BY Nome""")

@@ -15,7 +15,10 @@ def make_image():
 
 def test_health_and_catalogs(client):
     assert client.get("/api/health").get_json() == {"status": "ok", "database": "demo"}
-    assert client.get("/api/quartieri").get_json()[0]["nome"] == "Centro Storico"
+    quartieri = client.get("/api/quartieri").get_json()
+    assert len(quartieri) == 88
+    assert quartieri[0]["nome"] == "Adriano"
+    assert any(row["nome"] == "Parco Bosco in Città" for row in quartieri)
     assert client.get("/api/categorie").get_json()
 
 
@@ -26,6 +29,7 @@ def test_homepage_has_search_and_filters_not_creation_form(client):
     assert 'href="/reports/new"' in html
     assert 'id="report-form"' not in html
     assert 'id="filter-category"' in html
+    assert 'id="sort-reports"' in html
     assert client.get("/static/js/home.js").status_code == 200
     assert client.get("/static/js/report.js").status_code == 200
 
@@ -48,7 +52,12 @@ def test_guest_is_sent_to_login(client, path):
 def test_dashboard_and_profile_after_login(client, logged_in):
     assert client.get("/dashboard").status_code == 200
     assert client.get("/profilo").status_code == 200
-    assert "Marco Rossi" in client.get("/reports/new").get_data(as_text=True)
+    html = client.get("/reports/new").get_data(as_text=True)
+    assert "Marco Rossi" in html
+    assert 'name="categoria_id"' in html
+    assert 'name="categorie"' not in html
+    assert 'name="latitude"' not in html and 'name="longitude"' not in html
+    assert 'name="descrizione_accessibile"' not in html
 
 
 def test_report_requires_login_and_multipart_upload(client, logged_in, report_data):
@@ -66,9 +75,8 @@ def test_report_requires_attachment(client, logged_in, report_data):
     assert "allega" in response.get_json()["error"].lower()
 
 
-def test_publish_requires_category_quarter_and_accessible_text(client, logged_in, report_data):
-    for key, value in [("quartiere_id", ""), ("categorie", []),
-                       ("descrizione_accessibile", "")]:
+def test_publish_requires_category_and_quarter(client, logged_in, report_data):
+    for key, value in [("quartiere_id", ""), ("categoria_id", "")]:
         payload = {**report_data, key: value, "allegato": (make_image(), "lampione.jpg")}
         response = client.post("/api/segnalazioni", data=payload,
                                headers={"X-CSRFToken": csrf_token(client)},
@@ -103,7 +111,7 @@ def test_upload_checks_actual_file_content(client, logged_in, report_data):
 
 @pytest.mark.parametrize("field,value", [
     ("titolo", "a" * 201), ("descrizione", "a" * 5001), ("indirizzo", "a" * 256),
-    ("tipo", "inesistente"), ("latitude", "180"), ("longitude", "999"),
+    ("tipo", "inesistente"), ("categoria_id", "99999"),
 ])
 def test_server_validates_report_fields(client, logged_in, report_data, field, value):
     response = client.post("/api/segnalazioni",
@@ -128,17 +136,33 @@ def test_comments_and_support(client, logged_in):
     comment = client.post(f"/api/segnalazioni/{report_id}/commenti", json={"testo": "Confermo"},
                           headers={"X-CSRFToken": token})
     assert comment.status_code == 201
-    assert client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
-    assert client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 409
+    assert comment.get_json()["autore"] == "Marco Rossi"
+    assert next(row for row in client.get("/api/segnalazioni").get_json()
+                if row["id"] == report_id)["commenti_count"] == 1
+    result = client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token})
+    assert result.status_code == 200
+    assert result.get_json()["sostegni"] == 1
+    assert result.get_json()["sostenuta"] is True
+    repeat = client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token})
+    assert repeat.get_json()["sostegni"] == 1
+    rows = client.get("/api/segnalazioni?ordina=sostegni").get_json()
+    assert rows[0]["id"] == report_id and rows[0]["sostenuta"] == 1
     assert client.get(f"/api/segnalazioni/{report_id}/sostegno").get_json()["sostenuta"] is True
-    assert client.delete(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
+    withdrawn = client.delete(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token})
+    assert withdrawn.get_json()["sostegni"] == 0
+    assert client.delete(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).get_json()["sostegni"] == 0
     assert client.get(f"/api/segnalazioni/{report_id}/sostegno").get_json()["sostenuta"] is False
     assert client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
+    events = [event["azione"] for event in client.application.extensions["demo_store"]["events"]]
+    assert events.count("espressione_sostegno") == 2
+    assert events.count("ritiro_sostegno") == 1
+    client.post("/logout", data={"csrf_token": csrf_token(client)})
+    assert client.get(f"/api/segnalazioni/{report_id}").get_json()["commenti"][0]["testo"] == "Confermo"
 
 
 def test_priority_sort_and_attachment_metadata(app, client):
     store = app.extensions["demo_store"]
-    store["reports"][0]["sostegni"] = 9
+    store["supports"].update({(user_id, 1) for user_id in range(1, 10)})
     store["reports"][0]["allegato_id"] = 22
     store["reports"][0]["allegato_tipo"] = "video/mp4"
     store["reports"][0]["allegato_descrizione"] = "Video della buca"
@@ -149,6 +173,15 @@ def test_priority_sort_and_attachment_metadata(app, client):
     assert priority[0]["id"] == 1
     assert priority[0]["allegato_tipo"] == "video/mp4"
     assert priority[0]["allegato_descrizione"] == "Video della buca"
+
+def test_legacy_coordinates_are_ignored(client, logged_in, report_data):
+    payload = {**report_data, "latitude": "not-a-number", "longitude": "999",
+               "descrizione_accessibile": "non usata", "allegato": (make_image(), "foto.jpg")}
+    response = client.post("/api/segnalazioni", data=payload,
+                           headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
+    assert response.status_code == 201
+    report = client.get("/api/segnalazioni?mie=1").get_json()[0]
+    assert report["latitude"] is None and report["longitude"] is None
 
 
 def test_moderation_requires_role(app, client, logged_in):
