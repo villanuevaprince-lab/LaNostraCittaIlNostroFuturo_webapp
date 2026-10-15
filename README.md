@@ -61,7 +61,7 @@ python -m backend.app
 Su Windows PowerShell attiva l'ambiente con `.venv\Scripts\Activate.ps1`, copia
 `.env.example` in `.env` con `Copy-Item .env.example .env` e avvia sempre dalla
 radice con `python -m backend.app` (non `python backend/app.py`). Apri
-<http://localhost:5000>; `GET /api/health` restituisce `ok` solo se la
+<http://localhost:3000>; `GET /api/health` restituisce `ok` solo se la
 connessione MySQL è effettiva. Senza credenziali o certificato CA le API che
 richiedono il database rispondono `503`; non vengono mostrati dati fittizi.
 Rimuovi `APP_MODE=demo` da eventuali vecchi `.env`: non è più supportato.

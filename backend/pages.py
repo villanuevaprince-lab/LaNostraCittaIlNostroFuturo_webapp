@@ -40,4 +40,4 @@ def health():
     with database_cursor() as cursor:
         cursor.execute("SELECT 1 AS pronto")
         cursor.fetchone()
-    return jsonify(status="ok", database="aiven")
+    return jsonify(status="ok", database="aiven", release="mysql-production-3000")
