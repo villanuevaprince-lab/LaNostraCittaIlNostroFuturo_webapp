@@ -12,6 +12,7 @@ firmati Flask, senza token JWT esposti al browser.
 | `/` | Pubblico | Bacheca con filtri, commenti e sostegni |
 | `/login`, `/register` | Pubblico | Accesso e creazione account |
 | `/reports/new` | Autenticato | Form dedicato per segnalazioni e proposte |
+| `/reports/<id>` | Pubblico, o autore/moderatore | Scheda dettaglio e mappa |
 | `/dashboard` | Autenticato | Bacheca personale con le proprie segnalazioni |
 | `/profilo` | Autenticato | Modifica dati e cancellazione logica account |
 | `/moderazione` | Ruolo moderatore | Strumenti di moderazione |
@@ -19,7 +20,7 @@ firmati Flask, senza token JWT esposti al browser.
 `/reports/new` è una pagina separata dalla home. Il POST applicativo è
 `multipart/form-data` su `/api/segnalazioni`: l'utente deve essere autenticato,
 il token CSRF è verificato e il server ricava l'autore dalla sessione. Dopo
-l'invio, la pagina mostra una conferma e riporta alla home.
+l'invio, la pagina mostra una conferma e riporta alla dashboard.
 
 ## Struttura del codice
 
@@ -49,7 +50,8 @@ aggiornati al login riuscito. Il cookie è `HttpOnly`, `SameSite=Lax`, dura due
 ore ed è marcato `Secure` quando configurato per HTTPS. Flask-WTF protegge tutte
 le richieste che modificano dati, incluse le richieste JSON.
 
-L'utente viene ricaricato dal database a ogni richiesta. Il ruolo moderatore
+L'utente viene ricaricato dal database a ogni richiesta. `SessionVersion`
+invalida le altre sessioni dopo un cambio password. Il ruolo moderatore
 viene controllato in `MODERATORE` lato server; un campo inviato dal browser non
 può concedere permessi. I redirect post-login accettano solo destinazioni
 interne previste.
@@ -61,8 +63,10 @@ l'allegato senza estrarre coordinate, poi il repository inserisce segnalazione, 
 storico iniziale ed evento di audit nella stessa transazione MySQL. Se il
 salvataggio DB fallisce, il file viene rimosso. Gli upload hanno limite 20 MB,
 nomi casuali, verifica della firma e, per le immagini, decodifica e riscrittura
-Pillow per rimuovere metadati EXIF. Le coordinate delle nuove segnalazioni
-restano NULL.
+Pillow per rimuovere metadati EXIF. Le nuove coordinate sono validate server-side
+in un perimetro di Milano; i dati storici possono avere coordinate NULL.
+La visibilità iniziale è `bozza`: il moderatore pubblica o rifiuta dopo aver
+ispezionato il contenuto. Il ritiro da parte dell'autore è logico.
 
 Sostegni, commenti, stato e moderazione usano endpoint autenticati dove
 necessario; cambi di stato, blocchi e azioni moderate scrivono il log previsto
@@ -83,6 +87,9 @@ anche `database/seeds/001_reference_data.sql` se mancano i dati di riferimento.
 La migrazione `003_enforce_attachment_publication.sql` aggiunge i trigger che
 vietano la pubblicazione senza allegato e la rimozione dell'ultimo allegato
 pubblico; va applicata una volta dopo aver controllato i dati preesistenti.
+La migrazione `004_civic_features.sql` aggiunge le impostazioni profilo, la
+versione delle sessioni e l'indice per la coda paginata. Va applicata una volta
+prima di avviare questa release.
 Non eseguire la migrazione alla cieca su un database già aggiornato.
 
 Impostare in locale `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`,
@@ -96,6 +103,7 @@ Credenziali e certificati restano fuori da Git. L'app usa sempre MySQL;
 Gli upload locali sono adatti allo sviluppo; in produzione servono storage
 durabile, backup e controlli antimalware. Il rate limiter usa memoria per
 default e va configurato con storage condiviso su deployment multi-worker.
-Il cookie firmato non supporta revoca centralizzata immediata; per quella
-funzione serve uno store sessioni server-side. Email verification, recupero
+La versione di sessione nel DB revoca le altre sessioni al prossimo accesso
+dopo il cambio password; revoca istantanea/server-side richiederebbe uno store
+di sessioni centralizzato. Email verification, recupero
 password e integrazioni SPID/CIE non sono incluse.

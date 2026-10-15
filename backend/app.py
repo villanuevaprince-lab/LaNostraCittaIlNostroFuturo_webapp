@@ -61,12 +61,14 @@ def create_app(test_config=None):
     from backend.auth import auth
     from backend.api.auth import auth_api
     from backend.api.catalog import catalog_api
+    from backend.api.geo import geo_api
     from backend.pages import pages
     from backend.reports import reports
 
     app.register_blueprint(auth)
     app.register_blueprint(auth_api)
     app.register_blueprint(catalog_api)
+    app.register_blueprint(geo_api)
     app.register_blueprint(pages)
     app.register_blueprint(reports)
 
@@ -100,9 +102,11 @@ def create_app(test_config=None):
     def security_headers(response):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+            "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+            "script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com; "
+            "img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org"
         )
         if request.endpoint != "static":
             response.headers["Cache-Control"] = "no-store"

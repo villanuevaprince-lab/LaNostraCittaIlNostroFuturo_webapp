@@ -5,8 +5,9 @@ from mysql.connector import IntegrityError
 
 from backend.repositories.reports import (
     add_comment, attachment_path, block_user, change_report_state, get_report_record,
-    list_active_users, list_report_records, moderate_comment, moderate_report,
-    report_comments, set_support, unblock_user, user_supports,
+    list_moderation_reports, list_moderation_users, list_report_records,
+    moderate_comment, moderate_report, moderate_reports, report_comments,
+    set_support, unblock_user, user_supports, withdraw_report,
 )
 from backend.services.reports import ReportValidationError, create_report
 from backend.services.uploads import UploadError
@@ -20,6 +21,15 @@ reports = Blueprint("reports", __name__)
 @login_required
 def new_report():
     return render_template("report_new.html", user=g.user)
+
+
+@reports.get("/reports/<int:report_id>")
+def report_detail_page(report_id):
+    report = get_report_record(report_id)
+    if not report or (report["visibilita"] != "pubblica" and
+                      not (g.user and (g.user["id"] == report["autore_id"] or g.user["is_moderator"]))):
+        return render_template("error.html", message="Segnalazione non trovata.", status=404), 404
+    return render_template("report_detail.html", report_id=report_id)
 
 
 @reports.get("/api/segnalazioni")
@@ -54,18 +64,28 @@ def post_report():
         if error.errno == 1062:
             return jsonify(error="Operazione duplicata."), 409
         raise
-    flash("Segnalazione pubblicata correttamente." if data["tipo"] == "segnalazione"
-          else "Proposta pubblicata correttamente.", "success")
-    return jsonify(ok=True, report=report, redirect="/"), 201
+    flash("Contenuto inviato. Lo troverai nella tua area personale mentre attende la revisione.", "success")
+    return jsonify(ok=True, report=report, redirect="/dashboard"), 201
 
 
 @reports.get("/api/segnalazioni/<int:report_id>")
 def get_report(report_id):
     report = get_report_record(report_id)
-    if not report or report.get("visibilita", "pubblica") != "pubblica":
+    if not report or (report["visibilita"] != "pubblica" and
+                      not (g.user and (g.user["id"] == report["autore_id"] or g.user["is_moderator"]))):
         return jsonify(error="Segnalazione non trovata."), 404
-    report["commenti"] = report_comments(report_id)
+    report["commenti"] = report_comments(report_id) if report["visibilita"] == "pubblica" else []
+    report["data_creazione"] = report["data_creazione"].isoformat(timespec="seconds")
     return jsonify(report)
+
+
+@reports.delete("/api/segnalazioni/<int:report_id>")
+@login_required
+def delete_report(report_id):
+    result = withdraw_report(report_id, g.user["id"])
+    if result is None:
+        return jsonify(error="Segnalazione non trovata."), 404
+    return jsonify(ok=True, ritirata=True)
 
 
 @reports.post("/api/segnalazioni/<int:report_id>/commenti")
@@ -79,6 +99,8 @@ def post_comment(report_id):
     if not 1 <= len(text) <= 3000:
         return jsonify(error="Il commento deve contenere da 1 a 3000 caratteri."), 400
     comment = add_comment(report_id, g.user["id"], text)
+    if comment is None:
+        return jsonify(error="Contenuto non più pubblico."), 409
     return jsonify(comment), 201
 
 
@@ -94,6 +116,8 @@ def put_support(report_id):
         if error.errno == 1062:
             return jsonify(error="Hai già espresso sostegno a questa segnalazione."), 409
         raise
+    if summary is None:
+        return jsonify(error="Contenuto non più pubblico."), 409
     return jsonify(ok=True, **summary), 200
 
 
@@ -104,6 +128,8 @@ def delete_support(report_id):
     if not report or report.get("visibilita", "pubblica") != "pubblica":
         return jsonify(error="Segnalazione non trovata."), 404
     summary = set_support(report_id, g.user["id"], False)
+    if summary is None:
+        return jsonify(error="Contenuto non più pubblico."), 409
     return jsonify(ok=True, **summary)
 
 
@@ -159,6 +185,31 @@ def moderate_report_visibility(report_id):
     return jsonify(ok=True)
 
 
+@reports.get("/api/moderazione/coda")
+@role_required("moderatore")
+def moderation_queue():
+    visibility = request.args.get("visibilita", "bozza")
+    cursor = request.args.get("cursor", type=int)
+    limit = request.args.get("limit", 25, type=int)
+    if visibility not in {"bozza", "pubblica", "nascosta"} or not 1 <= limit <= 50 or cursor is not None and cursor < 1:
+        return jsonify(error="Filtro o paginazione non validi."), 400
+    return jsonify(list_moderation_reports(cursor, visibility, limit))
+
+
+@reports.post("/api/moderazione/segnalazioni/azioni")
+@role_required("moderatore")
+def moderate_batch():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(error="Invia un oggetto JSON valido."), 400
+    ids, action = payload.get("ids"), payload.get("azione")
+    actions = {"approva": "pubblica", "rifiuta": "rimossa", "nascondi": "nascosta"}
+    if (action not in actions or not isinstance(ids, list) or not 1 <= len(ids) <= 50
+            or any(type(value) is not int or value < 1 for value in ids)):
+        return jsonify(error="Azione o selezione non valida (massimo 50)."), 400
+    return jsonify(moderate_reports(ids, g.user["id"], actions[action]))
+
+
 @reports.delete("/api/moderazione/commenti/<int:comment_id>")
 @role_required("moderatore")
 def moderate_comment_visibility(comment_id):
@@ -198,12 +249,16 @@ def moderator_unblock_user(user_id):
 @reports.get("/api/moderazione/utenti")
 @role_required("moderatore")
 def moderator_users():
-    return jsonify(list_active_users(exclude_user_id=g.user["id"]))
+    cursor = request.args.get("cursor", type=int)
+    if cursor is not None and cursor < 1:
+        return jsonify(error="Paginazione non valida."), 400
+    return jsonify(list_moderation_users(cursor))
 
 
 @reports.get("/api/allegati/<int:attachment_id>")
 def get_attachment(attachment_id):
-    reference = attachment_path(attachment_id)
+    reference = attachment_path(attachment_id, g.user["id"] if g.user else None,
+                                bool(g.user and g.user["is_moderator"]))
     if not reference or Path(reference).name != reference:
         return jsonify(error="Allegato non trovato."), 404
     root = Path(current_app.config["UPLOAD_FOLDER"]).resolve()

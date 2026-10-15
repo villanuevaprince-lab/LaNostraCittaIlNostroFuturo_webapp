@@ -63,7 +63,10 @@ function createCard(report) {
   badge.className = "badge";
   badge.textContent = `${report.tipo} · ${String(report.stato).replaceAll("_", " ")}`;
   const title = document.createElement("h3");
-  title.textContent = report.titolo;
+  const detailLink = document.createElement("a");
+  detailLink.href = `/reports/${report.id}`;
+  detailLink.textContent = report.titolo;
+  title.append(detailLink);
   const description = document.createElement("p");
   description.textContent = report.descrizione;
   const meta = document.createElement("p");

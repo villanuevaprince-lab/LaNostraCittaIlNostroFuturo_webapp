@@ -1,4 +1,6 @@
-from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+
+from backend.api.geo import in_milan
 
 from backend.repositories.catalog import valid_categories, valid_neighborhood
 from backend.repositories.reports import create_report_record
@@ -30,15 +32,22 @@ def create_report(data, author, uploaded_file):
     if not valid_categories([category_id]):
         raise ReportValidationError("Seleziona una categoria valida.")
     address = (data.get("indirizzo") or "").strip()
-    if len(address) > 255:
-        raise ReportValidationError("L'indirizzo non può superare 255 caratteri.")
+    if not 3 <= len(address) <= 255:
+        raise ReportValidationError("Seleziona un luogo e indica un indirizzo (3–255 caratteri).")
+    try:
+        latitude = Decimal(data.get("latitude") or "")
+        longitude = Decimal(data.get("longitude") or "")
+    except InvalidOperation:
+        raise ReportValidationError("Seleziona il punto sulla mappa.")
+    if not latitude.is_finite() or not longitude.is_finite() or not in_milan(latitude, longitude):
+        raise ReportValidationError("Seleziona un punto nell'area di Milano.")
     upload = save_upload(uploaded_file, title)
     try:
         return create_report_record({
             "tipo": report_type, "titolo": title, "descrizione": description,
             "indirizzo": address, "quartiere_id": neighborhood, "categorie": [category_id],
-            "latitude": None, "longitude": None,
-            "data_creazione": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "latitude": latitude.quantize(Decimal("0.000001")),
+            "longitude": longitude.quantize(Decimal("0.000001")),
         }, author, upload)
     except Exception:
         remove_upload(upload)

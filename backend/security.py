@@ -31,7 +31,8 @@ def load_current_user():
         return
     user = find_user_by_id(user_id)
     # Verifichiamo lo stato a ogni richiesta, non soltanto al login.
-    if user and user["stato_account"] == "attivo" and not user["data_cancellazione"]:
+    if (user and user["stato_account"] == "attivo" and not user["data_cancellazione"]
+            and session.get("session_version", 0) == user.get("session_version", 0)):
         user["is_moderator"] = has_role(user["id"])
         g.user = user
     else:
@@ -70,6 +71,7 @@ def start_session(user):
     # Rimuove il precedente token CSRF e qualsiasi dato della sessione anonima.
     session.clear()
     session["user_id"] = user["id"]
+    session["session_version"] = user.get("session_version", 0)
     session.permanent = True
 
 

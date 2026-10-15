@@ -109,4 +109,5 @@ def report_data():
         "tipo": "segnalazione", "titolo": "Lampione spento",
         "descrizione": "Il lampione non funziona da alcuni giorni.",
         "indirizzo": "Via Roma, Milano", "quartiere_id": "1", "categoria_id": "1",
+        "latitude": "45.464200", "longitude": "9.190000",
     }

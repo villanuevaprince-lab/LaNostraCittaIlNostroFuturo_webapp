@@ -13,19 +13,21 @@ commenti e sostegni sono salvati nel database.
   limiti per login/registrazione.
 - Bacheca con ricerca per testo, quartiere, categoria e stato; ordine per data
   o sostegni attivi e conteggio dei commenti visibile sulle schede.
-- Pagina profilo con modifica dei dati e cancellazione logica dell'account.
-- Pagina dedicata per nuove segnalazioni: quartiere, una categoria dal menu,
-  indirizzo facoltativo e foto/video obbligatorio. Le coordinate restano NULL
-  e il testo tecnico dell'allegato viene compilato automaticamente dal titolo.
+- Profilo con bio, quartiere di interesse, preferenza notifiche, avatar e cambio
+  password verificato; modifica password invalida le altre sessioni.
+- Pagina dedicata con mappa Leaflet, ricerca indirizzo su richiesta, pin
+  trascinabile, coordinate e indirizzo salvati in MySQL; foto/video obbligatorio.
+  I nuovi contenuti attendono approvazione e sono visibili subito all'autore.
 - Validazione upload JPEG/PNG/WebP/MP4/WebM fino a 20 MB. Le immagini sono
   verificate con Pillow e risalvate senza metadati EXIF; non si estraggono
   coordinate GPS.
 - Commenti pubblici visibili anche agli ospiti; pubblicazione e sostegno
   richiedono account e CSRF. I sostegni ripetuti sono idempotenti.
-- Area moderazione protetta da ruolo DB: stato e visibilità dei contenuti,
-  rimozione commenti e blocco/sblocco account con eventi di audit.
-- Storico stato, evento di pubblicazione e allegato salvati nella stessa
-  transazione MySQL della segnalazione. La pubblicazione avviene dopo l'upload;
+- Coda moderazione a paginazione keyset, azioni individuali o batch (massimo
+  50), rimozione commenti, blocco/sblocco account ed eventi di audit.
+- Scheda dettaglio con posizione su mappa e ritiro autonomo dalla dashboard.
+- Storico stato, evento di invio e allegato salvati nella stessa
+  transazione MySQL della segnalazione. La pubblicazione avviene dopo la revisione;
   i trigger impediscono la pubblicazione senza allegato e la rimozione
   dell'ultimo allegato di una segnalazione pubblica.
 
@@ -93,6 +95,11 @@ Rimuovi `APP_MODE=demo` da eventuali vecchi `.env`: non è più supportato.
    Il seed aggiunge gli 88 NIL del Comune di
    Milano e rende inattivi i nove raggruppamenti generici del vecchio seed,
    senza cancellare righe o alterare i riferimenti delle segnalazioni esistenti.
+6. Per questa versione, dopo un backup, applica **una sola volta**
+   `database/migrations/004_civic_features.sql` su Aiven. Aggiunge Bio,
+   NotificheEmail, AvatarRiferimento, SessionVersion e un indice sulla coda.
+   L'app non la esegue automaticamente: avvia il nuovo codice solo dopo la
+   migrazione. Verifica prima che tali colonne/indice non esistano già.
 6. Avvia l'app. La connessione richiede il certificato CA e verifica certificato
    e hostname TLS. L'app non esegue migrazioni automatiche.
 
@@ -129,15 +136,18 @@ Le richieste che modificano dati richiedono il token CSRF nell'header
 | `POST /api/auth/login` | Pubblico | Accesso JSON |
 | `POST /api/auth/logout` | Sessione | Uscita |
 | `GET/PATCH/DELETE /api/auth/me` | Sessione | Profilo e cancellazione logica |
+| `POST /api/auth/me/password`, `POST /api/auth/me/avatar` | Sessione | Password e immagine profilo |
+| `GET /api/geo/search`, `GET /api/geo/reverse` | Sessione | Geocodifica di Milano su richiesta |
 | `GET /api/quartieri`, `GET /api/categorie` | Pubblico | Cataloghi attivi |
 | `GET /api/segnalazioni` | Pubblico | Ricerca, filtri, `?ordina=sostegni`; `?mie=1` richiede login |
 | `POST /api/segnalazioni` | Sessione | `multipart/form-data`, allegato obbligatorio |
 | `GET /api/segnalazioni/<id>` | Pubblico | Dettaglio e commenti |
+| `DELETE /api/segnalazioni/<id>` | Autore | Ritiro logico del contenuto |
 | `POST /api/segnalazioni/<id>/commenti` | Sessione | Pubblica un commento |
 | `GET/PUT/DELETE /api/segnalazioni/<id>/sostegno` | Sessione | Legge, esprime o ritira sostegno (richieste ripetute idempotenti) |
 | `GET /api/allegati/<id>` | Pubblico se segnalazione pubblica | Scarica allegato controllato |
 | `PATCH /api/segnalazioni/<id>/stato` | Moderatore | Transizione di stato e storico |
-| `/api/moderazione/*` | Moderatore | Visibilità, commenti e blocchi |
+| `/api/moderazione/*` | Moderatore | Coda, azioni batch, commenti e blocchi |
 
 La documentazione dettagliata è in [`docs/api.md`](docs/api.md) e
 [`docs/architettura.md`](docs/architettura.md).
@@ -160,3 +170,10 @@ extra `Flask-Limiter`). `memory://` è adatto solo a sviluppo o test. Prevedi
 backup DB, retention degli allegati, scansione malware e monitoraggio. L'analisi
 IA non prende decisioni automatiche: i risultati devono restare soggetti a
 revisione umana.
+
+La ricerca usa Nominatim pubblico solo dopo il click dell'utente (mai
+autocomplete), con limite globale configurato nello storage rate-limit e cache
+di processo. Mostra attribuzione OpenStreetMap. Per volumi elevati usa un
+geocoder/servizio tile dedicato o self-hosted e una cache condivisa, rispettando
+le condizioni del fornitore. La preferenza notifiche è salvata, ma non invia
+email finché non è integrato un servizio di consegna.

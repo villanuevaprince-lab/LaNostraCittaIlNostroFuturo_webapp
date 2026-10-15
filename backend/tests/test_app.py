@@ -55,7 +55,7 @@ def test_dashboard_and_form_after_login(client, logged_in):
     assert client.get("/profilo").status_code == 200
     html = client.get("/reports/new").get_data(as_text=True)
     assert "Marco Rossi" in html and 'name="categoria_id"' in html
-    assert 'name="latitude"' not in html and 'name="longitude"' not in html
+    assert 'type="hidden" name="latitude"' in html and 'type="hidden" name="longitude"' in html
     assert 'name="descrizione_accessibile"' not in html
 
 
@@ -93,14 +93,52 @@ def test_report_publication_passes_session_author(client, logged_in, report_data
     insert = Mock(return_value={"id": 42, "stato": "aperta"})
     monkeypatch.setattr(service, "create_report_record", insert)
     response = client.post("/api/segnalazioni", data={
-        **report_data, "id_autore": "999", "latitude": "999", "longitude": "999",
+        **report_data, "id_autore": "999",
         "allegato": (make_image(), "photo.jpg"),
     }, headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
-    assert response.status_code == 201 and response.get_json()["redirect"] == "/"
+    assert response.status_code == 201 and response.get_json()["redirect"] == "/dashboard"
     data, author, upload = insert.call_args.args
-    assert author["id"] == 101 and data["latitude"] is None and data["longitude"] is None
+    assert author["id"] == 101 and str(data["latitude"]) == "45.464200" and str(data["longitude"]) == "9.190000"
     assert upload["path"].is_file()
-    assert "Segnalazione pubblicata correttamente." in client.get("/").get_data(as_text=True)
+    assert "Contenuto inviato." in client.get("/").get_data(as_text=True)
+
+
+def test_report_rejects_out_of_city_coordinates(client, logged_in, report_data, monkeypatch):
+    from backend.services import reports as service
+    monkeypatch.setattr(service, "valid_neighborhood", lambda _: True)
+    monkeypatch.setattr(service, "valid_categories", lambda _: True)
+    response = client.post("/api/segnalazioni", data={**report_data, "latitude": "41.9028",
+        "allegato": (make_image(), "photo.jpg")}, headers={"X-CSRFToken": csrf_token(client)},
+        content_type="multipart/form-data")
+    assert response.status_code == 400 and "Milano" in response.get_json()["error"]
+
+
+def test_withdraw_requires_auth_and_ownership(client, logged_in, monkeypatch):
+    from backend import reports
+    token = csrf_token(client)
+    withdraw = Mock(return_value=None)
+    monkeypatch.setattr(reports, "withdraw_report", withdraw)
+    assert client.delete("/api/segnalazioni/2", headers={"X-CSRFToken": token}).status_code == 404
+    assert withdraw.call_args.args == (2, 101)
+    withdraw.return_value = True
+    assert client.delete("/api/segnalazioni/2", headers={"X-CSRFToken": token}).status_code == 200
+
+
+def test_batch_moderation_checks_role_and_limit(client, logged_in, monkeypatch):
+    from backend import reports, users
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": False)
+    token = csrf_token(client)
+    path = "/api/moderazione/segnalazioni/azioni"
+    assert client.post(path, json={"ids": [1], "azione": "approva"},
+                       headers={"X-CSRFToken": token}).status_code == 403
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": True)
+    action = Mock(return_value={"modificate": 1, "invariate": 0, "missing": []})
+    monkeypatch.setattr(reports, "moderate_reports", action)
+    assert client.post(path, json={"ids": list(range(51)), "azione": "approva"},
+                       headers={"X-CSRFToken": csrf_token(client)}).status_code == 400
+    assert client.post(path, json={"ids": [1], "azione": "approva"},
+                       headers={"X-CSRFToken": csrf_token(client)}).status_code == 200
+    assert action.call_args.args == ([1], 101, "pubblica")
 
 
 def test_comments_and_support_use_repository(client, logged_in, monkeypatch):
@@ -123,6 +161,7 @@ def test_comments_and_support_use_repository(client, logged_in, monkeypatch):
 
 def test_moderation_requires_database_role(client, logged_in, monkeypatch):
     from backend import reports, users
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": False)
     token = csrf_token(client)
     denied = client.patch("/api/segnalazioni/1/stato", json={"stato": "risolta"},
                           headers={"X-CSRFToken": token})

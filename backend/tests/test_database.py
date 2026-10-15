@@ -8,7 +8,7 @@ import pytest
 from backend import database, users
 from backend.app import create_app
 from backend.repositories import catalog
-from backend.repositories.reports import create_report_record, list_report_records, set_support
+from backend.repositories.reports import create_report_record, list_report_records, set_support, moderate_reports, withdraw_report
 
 
 @pytest.fixture()
@@ -104,7 +104,8 @@ def test_publication_follows_attachment_insert_in_one_transaction(fake_mysql):
     assert "'bozza'" in queries[0]
     assert cursor.execute.call_args_list[0].args[1][0] == 9
     assert "INSERT INTO ALLEGATO" in queries[1]
-    assert "Visibilita='pubblica'" in queries[-1]
+    assert "Visibilita='pubblica'" not in queries[-1]
+    assert result["visibilita"] == "bozza"
     assert result["id"] == 42
     connection.commit.assert_called_once()
 
@@ -132,13 +133,31 @@ def test_search_is_parameterized(fake_mysql):
 
 def test_active_support_is_not_recorded_twice(fake_mysql):
     connection, cursor = fake_mysql
-    cursor.fetchone.side_effect = [{"IdSostegno": 7, "DataRitiro": None}, {"sostegni": 1}]
+    cursor.fetchone.side_effect = [{"Visibilita": "pubblica"}, {"IdSostegno": 7, "DataRitiro": None}, {"sostegni": 1}]
     assert set_support(12, 42, True) == {"sostenuta": True, "sostegni": 1}
     assert "FOR UPDATE" in cursor.execute.call_args_list[0].args[0]
-    assert cursor.execute.call_args_list[0].args[1] == (42, 12)
-    assert cursor.execute.call_count == 2  # lock + count; nessuna scrittura
+    assert cursor.execute.call_args_list[1].args[1] == (42, 12)
+    assert cursor.execute.call_count == 3  # lock genitore + sostegno + count
     assert all("EVENTO_LOG" not in call.args[0] for call in cursor.execute.call_args_list)
     connection.commit.assert_called_once()
+
+
+def test_bulk_moderation_uses_stable_lock_order_and_audit(fake_mysql):
+    connection, cursor = fake_mysql
+    cursor.fetchone.side_effect = [{"Visibilita": "bozza"}, {"Visibilita": "pubblica"}]
+    result = moderate_reports([2, 1], 9, "pubblica")
+    assert result == {"modificate": 1, "invariate": 1, "missing": []}
+    locks = [call.args[1][0] for call in cursor.execute.call_args_list if "FOR UPDATE" in call.args[0]]
+    assert locks == [1, 2]
+    assert any("EVENTO_LOG" in call.args[0] for call in cursor.execute.call_args_list)
+    connection.commit.assert_called_once()
+
+
+def test_withdraw_cannot_touch_other_authors_report(fake_mysql):
+    _, cursor = fake_mysql
+    cursor.fetchone.return_value = {"IdAutore": 10, "Visibilita": "pubblica"}
+    assert withdraw_report(3, 11) is None
+    assert all("UPDATE SEGNALAZIONE" not in call.args[0] for call in cursor.execute.call_args_list)
 
 
 def test_missing_ca_fails_closed(app, monkeypatch, tmp_path):
@@ -152,7 +171,7 @@ def test_missing_ca_fails_closed(app, monkeypatch, tmp_path):
 
 def test_health_checks_database_connection(fake_mysql, client):
     connection, cursor = fake_mysql
-    assert client.get("/api/health").get_json() == {"status": "ok", "database": "aiven"}
+    assert client.get("/api/health").get_json()["database"] == "aiven"
     assert cursor.execute.call_args.args == ("SELECT 1 AS pronto",)
     connection.close.assert_called_once()
 

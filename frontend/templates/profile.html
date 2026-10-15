@@ -2,16 +2,38 @@
 {% block title %}Profilo — La Nostra Città{% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/profile.js') }}" defer></script>{% endblock %}
 {% block content %}
-  <section class="panel auth-panel"><p class="eyebrow">Il tuo account</p><h1 class="page-title">Profilo</h1>
+  <section class="panel profile-panel"><p class="eyebrow">Il tuo account</p><h1 class="page-title">Profilo e sicurezza</h1>
+    <div class="profile-layout"><div>
+    <h2>Informazioni personali</h2>
     <form id="profile-form" data-profile-form>
       <label class="field">Nome<input name="nome" maxlength="100" required></label>
       <label class="field">Cognome<input name="cognome" maxlength="100" required></label>
       <label class="field">Email<input name="email" type="email" readonly></label>
-      <label class="field">Quartiere di appartenenza<select name="quartiere_id" id="profile-neighborhood"><option value="">Nessuno</option></select></label>
+      <label class="field">Quartiere di interesse<select name="quartiere_id" id="profile-neighborhood"><option value="">Nessuno</option></select></label>
+      <label class="field">Breve biografia<textarea name="bio" rows="4" maxlength="500" placeholder="Presentati alla comunità"></textarea></label>
+      <label class="check-field"><input name="notifiche_email" type="checkbox"> Desidero ricevere notifiche via email quando saranno disponibili</label>
       <button class="button" type="submit">Salva profilo</button>
     </form>
     <p id="profile-status" class="status" role="status" aria-live="polite"></p>
+    <h2>Immagine profilo</h2>
+    <img id="profile-avatar" class="avatar" alt="La tua immagine profilo" hidden>
+    <form id="avatar-form" enctype="multipart/form-data">
+      <label class="field">Carica un avatar (JPEG, PNG o WebP, massimo 2 MB)
+        <input name="avatar" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+      <button class="button button-secondary" type="submit">Aggiorna avatar</button>
+    </form>
+    <p id="avatar-status" class="status" role="status"></p>
+    </div><div>
+    <h2>Cambia password</h2>
+    <form id="password-form">
+      <label class="field">Password attuale<input name="password_attuale" type="password" autocomplete="current-password" required></label>
+      <label class="field">Nuova password<input name="nuova_password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+      <label class="field">Conferma nuova password<input name="conferma_password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+      <button class="button" type="submit">Cambia password</button>
+    </form>
+    <p id="password-status" class="status" role="status"></p>
     <hr><h2>Elimina account</h2><p>L'account sarà disattivato con cancellazione logica.</p>
     <button class="button button-danger" id="delete-account" type="button">Elimina il mio account</button>
+    </div></div>
   </section>
 {% endblock %}

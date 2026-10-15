@@ -2,9 +2,26 @@
 {% block title %}Moderazione — La Nostra Città{% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/moderation.js') }}" defer></script>{% endblock %}
 {% block content %}
-  <section class="hero"><div><p class="eyebrow">Comitato cittadino</p><h1>Moderazione</h1>
-    <p>Le API verificano il ruolo di moderatore prima di ogni modifica.</p></div></section>
-  <section class="panel"><h2>Segnalazioni pubbliche</h2><p id="moderation-status" class="status" role="status"></p>
-    <div id="moderation-reports" class="report-grid"></div></section>
-  <section class="panel"><h2>Account attivi</h2><div id="moderation-users"></div></section>
+  <section class="hero"><div><p class="eyebrow">Gestione civica</p><h1>Centro moderazione</h1>
+    <p>Esamina i contenuti in ordine di arrivo e applica le decisioni individualmente o in gruppi fino a 50.</p></div></section>
+  <section class="panel">
+    <div class="section-heading"><div><p class="eyebrow">Coda contenuti</p><h2>Segnalazioni e proposte</h2></div>
+      <label class="field">Vista<select id="moderation-filter">
+        <option value="bozza">In revisione</option><option value="pubblica">Pubblicate</option>
+        <option value="nascosta">Nascoste</option>
+      </select></label></div>
+    <div class="toolbar" aria-label="Azioni sui contenuti selezionati">
+      <span id="selected-count">0 selezionati</span>
+      <button id="bulk-approve" class="button" type="button" disabled>Approva selezionati</button>
+      <button id="bulk-reject" class="button button-danger" type="button" disabled>Rifiuta selezionati</button>
+    </div>
+    <p id="moderation-status" class="status" role="status"></p>
+    <div id="moderation-reports" class="moderation-list"></div>
+    <button id="moderation-next" class="button button-secondary" type="button" hidden>Carica altri</button>
+  </section>
+  <section class="panel"><p class="eyebrow">Account</p><h2>Gestione utenti</h2>
+    <p class="hint">I moderatori non possono essere bloccati da questa schermata.</p>
+    <div id="moderation-users" class="moderation-list"></div>
+    <button id="users-next" class="button button-secondary" type="button" hidden>Carica altri utenti</button>
+  </section>
 {% endblock %}

@@ -96,7 +96,7 @@ def test_open_redirect_is_blocked(submit, users_stub, registration, target):
     assert submit("/register", {**registration, "next": target}).location == "/"
 
 
-@pytest.mark.parametrize("path", ["/register", "/login", "/logout", "/reports/new"])
+@pytest.mark.parametrize("path", ["/register", "/login", "/logout", "/api/segnalazioni"])
 def test_all_forms_require_csrf(client, path):
     assert client.post(path, data={}).status_code == 400
 
@@ -105,7 +105,7 @@ def test_invalid_and_prelogin_csrf_tokens_rejected(client, submit, users_stub, r
     old_token = csrf_token(client)
     submit("/register", registration)
     for token in ["not-valid", old_token]:
-        assert client.post("/reports/new", data={**report_data,
+        assert client.post("/api/segnalazioni", data={**report_data,
                                                 "csrf_token": token}).status_code == 400
     response = client.post("/api/segnalazioni", json=report_data)
     assert response.status_code == 400 and response.is_json
@@ -127,7 +127,7 @@ def test_expired_session_cannot_access_form(client, logged_in):
 def test_expired_csrf_is_rejected(app, client, report_data, logged_in):
     token = csrf_token(client)
     app.config["WTF_CSRF_TIME_LIMIT"] = -1
-    assert client.post("/reports/new", data={**report_data, "csrf_token": token}).status_code == 400
+    assert client.post("/api/segnalazioni", data={**report_data, "csrf_token": token}).status_code == 400
 
 
 @pytest.mark.parametrize("stored_hash", ["HASH_DEMO_NON_VALIDO_1", "$argon2-invalid"])

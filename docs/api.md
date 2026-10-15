@@ -35,9 +35,18 @@ Svuota la sessione e risponde `{"ok": true, "redirect": "/"}`.
 
 ### `GET`, `PATCH`, `DELETE /api/auth/me`
 
-Richiedono sessione. Il `PATCH` accetta solo `nome`, `cognome` e `quartiere_id`;
+Richiedono sessione. Il `PATCH` accetta `nome`, `cognome`, `quartiere_id`,
+`bio` (massimo 500 caratteri) e `notifiche_email` (booleano);
 l'email non è modificabile da questo endpoint. La cancellazione è logica:
 imposta stato `cancellato`, registra l'evento e termina il cookie corrente.
+
+`POST /api/auth/me/password` richiede JSON `password_attuale`,
+`nuova_password`, `conferma_password`: verifica il vecchio hash, aggiorna con
+CAS e audit, incrementa `SessionVersion` e ruota sessione/CSRF. Le altre
+sessioni decadono alla richiesta successiva. Limite 5 tentativi/ora.
+`POST /api/auth/me/avatar` riceve multipart `avatar` (JPEG/PNG/WebP, max 2 MB),
+risalva senza EXIF in WebP su `UPLOAD_FOLDER/avatars`; `GET /api/auth/avatar/<id>`
+serve l'immagine.
 
 ## Cataloghi e segnalazioni
 
@@ -72,7 +81,8 @@ Richiede sessione, CSRF e `multipart/form-data`. Campi:
 | `descrizione` | 10–5000 caratteri |
 | `quartiere_id` | ID di un quartiere attivo |
 | `categoria_id` | Un ID categoria attiva, scelto dal menu a tendina |
-| `indirizzo` | Facoltativo, massimo 255 caratteri |
+| `indirizzo` | Obbligatorio, 3–255 caratteri; correggibile dopo il posizionamento |
+| `latitude`, `longitude` | Obbligatorie, coordinate del pin nell'area di Milano |
 | `allegato` | Obbligatorio; JPEG, PNG, WebP, MP4 o WebM; massimo 20 MB |
 
 Esempio browser:
@@ -89,24 +99,28 @@ const response = await fetch("/api/segnalazioni", {
 L'autore proviene dalla sessione; valori client come `id_autore`, stato e
 visibilità non vengono usati. File, segnalazione inizialmente in bozza, categorie,
 storico iniziale ed evento vengono registrati insieme nella transazione SQL;
-la visibilità diventa pubblica solo dopo l'allegato. Se il DB fallisce,
+la visibilità resta `bozza` finché il moderatore approva. Se il DB fallisce,
 il file appena scritto viene eliminato. La risposta è `201` e include la
-destinazione `/` con messaggio flash di conferma.
+destinazione `/dashboard` con messaggio flash di conferma.
 
-Le coordinate non sono raccolte dal form né lette dall'EXIF: le nuove righe
-usano NULL. La colonna `DescrizioneAccessibile` esistente viene compilata
+Le coordinate non sono lette dall'EXIF: arrivano dal pin e sono validate sul
+server. La colonna `DescrizioneAccessibile` esistente viene compilata
 automaticamente con il tipo di media e il titolo (non descrive dettagli visivi
 non verificabili). Le immagini sono risalvate senza EXIF. I video
 sono controllati tramite firme file MP4/WebM, non solo nome/estensione.
 
 ### `GET /api/segnalazioni/<id>`
 
-Restituisce dettaglio e commenti pubblici della segnalazione. Contenuti nascosti
-o rimossi restituiscono `404`.
+Restituisce dettaglio, categorie, coordinate, allegato e commenti pubblici.
+I contenuti non pubblici sono visibili solo all'autore e ai moderatori.
+`GET /reports/<id>` mostra anche una mappa; segnalazioni storiche prive di
+coordinate sono mostrate senza pin. `DELETE /api/segnalazioni/<id>` consente
+all'autore il ritiro logico, irreversibile via UI, con evento di audit.
 
 ### `GET /api/allegati/<id>`
 
-Restituisce il file solo se collegato a segnalazione pubblica. Il percorso usa
+Restituisce il file se collegato a segnalazione pubblica o visibile ad autore/
+moderatore (ma mai dopo il ritiro). Il percorso usa
 un nome casuale generato dal server e viene confinato nella directory upload.
 
 ## Commenti e sostegni
@@ -125,7 +139,11 @@ un nome casuale generato dal server e viene confinato nella directory upload.
 Tutti gli endpoint seguenti richiedono una riga corrispondente in `MODERATORE`
 e CSRF sulle mutazioni.
 
-- `GET /api/moderazione/utenti`: elenco limitato di account attivi escluso il moderatore corrente.
+- `GET /api/moderazione/coda?visibilita=bozza&cursor=<id>&limit=25`: coda
+  keyset (`bozza`, `pubblica`, `nascosta`), `items` e `next_cursor`.
+- `POST /api/moderazione/segnalazioni/azioni`: JSON `ids` (1–50 interi) e
+  `azione` (`approva`, `rifiuta`, `nascondi`), transazione e audit per elemento.
+- `GET /api/moderazione/utenti?cursor=<id>`: account non moderatori in pagine da 25.
 - `PATCH /api/segnalazioni/<id>/stato`: JSON `stato`, opzionale `motivazione`;
   valida transizioni, aggiorna `SEGNALAZIONE`, `STORICO_STATO` ed `EVENTO_LOG`.
 - `PATCH /api/moderazione/segnalazioni/<id>`: JSON `visibilita` (`nascosta`,
@@ -135,6 +153,18 @@ e CSRF sulle mutazioni.
   `giorni` 1–365 o `null`; aggiorna `UTENTE`, `BLOCCO` ed evento.
 - `POST /api/moderazione/utenti/<id>/sblocco`: JSON `motivazione` facoltativa;
   registra revoca e riattiva l'account.
+
+`rimossa` è terminale: un contenuto ritirato o rifiutato non può essere
+approvato nuovamente. Blocco utenti moderatori non consentito.
+
+## Mappa
+
+`GET /api/geo/search?q=<indirizzo>` e `/api/geo/reverse?lat=<numero>&lng=<numero>`
+richiedono login e sono limitati globalmente (1 richiesta/s, 1000/giorno nello
+storage di rate limit). Il geocoder è invocato solo su ricerca esplicita o
+spostamento del pin; non è un servizio di autocomplete. Nessuna chiamata dal
+browser direttamente a Nominatim; le tile OSM sono caricate dal browser con
+attribuzione.
 
 ## Errori
 
