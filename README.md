@@ -151,6 +151,8 @@ Le richieste che modificano dati richiedono il token CSRF nell'header
 
 La documentazione dettagliata è in [`docs/api.md`](docs/api.md) e
 [`docs/architettura.md`](docs/architettura.md).
+Per la procedura completa di installazione e configurazione Aiven consulta
+[`docs/configurazione.md`](docs/configurazione.md).
 
 ## Test
 
