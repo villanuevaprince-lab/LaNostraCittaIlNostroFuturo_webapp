@@ -2,8 +2,8 @@
 
 Webapp Flask per segnalazioni e proposte civiche. Il backend espone API JSON;
 il frontend usa HTML, CSS responsive e moduli JavaScript vanilla. Il progetto
-legge e scrive MySQL 8 su Aiven per impostazione predefinita; una modalità demo
-in memoria resta disponibile soltanto se selezionata esplicitamente.
+legge e scrive esclusivamente MySQL 8 su Aiven. Account, segnalazioni,
+commenti e sostegni sono salvati nel database.
 
 ## Funzioni
 
@@ -42,7 +42,7 @@ in memoria resta disponibile soltanto se selezionata esplicitamente.
 | `frontend/templates/` | Pagine HTML accessibili servite da Flask |
 | `frontend/static/` | CSS e moduli ES vanilla |
 | `database/` | Schema completo, estensione del DB esistente e seed di riferimento |
-| `backend/tests/` | Test con Flask test client e connessione MySQL vietata |
+| `backend/tests/` | Test con Flask test client e connessione MySQL simulata |
 
 ## Avvio locale
 
@@ -62,17 +62,14 @@ Su Windows PowerShell attiva l'ambiente con `.venv\Scripts\Activate.ps1`, copia
 `.env.example` in `.env` con `Copy-Item .env.example .env` e avvia sempre dalla
 radice con `python -m backend.app` (non `python backend/app.py`). Apri
 <http://localhost:5000>; `GET /api/health` restituisce `ok` solo se la
-connessione MySQL è effettiva. Senza credenziali o certificato CA la modalità
-database non ripiega su dati dimostrativi e risponde `503`.
-
-Per una prova isolata senza Aiven imposta `APP_MODE=demo` nel `.env`. La demo non
-contiene account predefiniti: registrane uno. Utenti e contenuti scompaiono al
-riavvio; non usare questa modalità come deployment.
+connessione MySQL è effettiva. Senza credenziali o certificato CA le API che
+richiedono il database rispondono `503`; non vengono mostrati dati fittizi.
+Rimuovi `APP_MODE=demo` da eventuali vecchi `.env`: non è più supportato.
 
 ## Configurazione MySQL Aiven esistente
 
 1. Crea `.env` copiando `.env.example`; `.env` è escluso da Git.
-2. Lascia `APP_MODE=database`, imposta una `SECRET_KEY` casuale di almeno 32 caratteri,
+2. Imposta una `SECRET_KEY` casuale di almeno 32 caratteri,
    i parametri `DB_*` e `DB_SSL_CA_PATH`. Inserisci localmente le credenziali.
 3. Verifica lo schema reale e crea un backup prima di qualsiasi DDL.
 4. Se il DB contiene solo lo schema iniziale, applica **una sola volta**
@@ -103,6 +100,9 @@ Gli 88 NIL provengono dal dataset pubblico DS964 del Comune di Milano:
 <https://dati.comune.milano.it/dataset/e8e765fc-d882-40b8-95d8-16ff3d39eb7c>.
 Non mettere password, certificato CA o `.env` nel repository; il seed SQL si
 applica manualmente al tuo database, preferibilmente dopo un backup.
+Se una password Aiven è già stata inserita in un commit pubblico, cambiala
+su Aiven: sostituire il valore nel file corrente non la rimuove dalla cronologia
+Git. Aggiorna quindi soltanto il tuo `.env` locale con la nuova password.
 
 `database/schema/001_full_schema.sql` serve a creare un **database nuovo** e
 non deve essere eseguito sopra il DB Aiven popolato. Gli utenti del seed con
@@ -110,9 +110,12 @@ non deve essere eseguito sopra il DB Aiven popolato. Gli utenti del seed con
 con una nuova email. Per abilitare un moderatore, un amministratore DB deve
 aggiungere l'utente alla tabella `MODERATORE` dopo aver verificato l'ID.
 
-I file sono conservati in `storage/uploads/`, escluso da Git. In produzione
-monta un volume persistente e non condividere l'accesso alla cartella con altri
-servizi. Una futura migrazione a object storage deve mantenere i controlli MIME,
+I file sono conservati in `storage/uploads/` rispetto alla radice del progetto,
+indipendentemente dalla directory di avvio, ed esclusi da Git. Per conservare
+anche foto e video dopo riavvii o nuove installazioni, configura `UPLOAD_FOLDER`
+su un volume persistente con backup. MySQL conserva i riferimenti ai file,
+non i byte degli allegati. Non condividere la cartella con altri servizi.
+Una futura migrazione a object storage deve mantenere i controlli MIME,
 dimensione, nomi casuali e autorizzazione alla lettura.
 
 ## API principali
@@ -145,9 +148,9 @@ La documentazione dettagliata è in [`docs/api.md`](docs/api.md) e
 python -m pytest -q
 ```
 
-I test non si collegano ad Aiven: l'accesso al driver è sostituito da un errore
-se un test tenta di aprire una connessione. Dopo i test automatici, verifica la
-configurazione DB su un ambiente di test o in una finestra controllata.
+I test non si collegano ad Aiven: simulano l'accesso al database e bloccano
+le connessioni di rete. Dopo i test automatici, verifica la configurazione DB
+su un ambiente di test o in una finestra controllata.
 
 ## Produzione
 

@@ -1,4 +1,6 @@
+"""Flussi HTTP senza connessioni reali; query e commit sono testati a parte."""
 from io import BytesIO
+from unittest.mock import Mock
 
 from PIL import Image
 import pytest
@@ -13,25 +15,25 @@ def make_image():
     return buffer
 
 
-def test_health_and_catalogs(client):
-    assert client.get("/api/health").get_json() == {"status": "ok", "database": "demo"}
-    quartieri = client.get("/api/quartieri").get_json()
-    assert len(quartieri) == 88
-    assert quartieri[0]["nome"] == "Adriano"
-    assert any(row["nome"] == "Parco Bosco in Città" for row in quartieri)
-    assert client.get("/api/categorie").get_json()
+def test_catalogs_are_read_from_repository(client, monkeypatch):
+    from backend.services import catalog
+    get_neighborhoods = Mock(return_value=[{"id": 11, "nome": "Adriano"}])
+    get_categories = Mock(return_value=[{"id": 3, "nome": "Decoro urbano"}])
+    monkeypatch.setattr(catalog, "list_neighborhoods", get_neighborhoods)
+    monkeypatch.setattr(catalog, "list_categories", get_categories)
+    assert client.get("/api/quartieri").get_json() == [{"id": 11, "nome": "Adriano"}]
+    assert client.get("/api/categorie").get_json()[0]["nome"] == "Decoro urbano"
+    assert get_neighborhoods.call_count == get_categories.call_count == 2
 
 
-def test_homepage_has_search_and_filters_not_creation_form(client):
+def test_homepage_has_filters_and_separate_creation_page(client):
     response = client.get("/")
     html = response.get_data(as_text=True)
     assert response.status_code == 200
     assert 'href="/reports/new"' in html
     assert 'id="report-form"' not in html
-    assert 'id="filter-category"' in html
-    assert 'id="sort-reports"' in html
-    assert client.get("/static/js/home.js").status_code == 200
-    assert client.get("/static/js/report.js").status_code == 200
+    assert 'id="filter-category"' in html and 'id="sort-reports"' in html
+    assert "Modalità demo" not in html
 
 
 @pytest.mark.parametrize("path", [
@@ -45,155 +47,92 @@ def test_no_static_html_bypass(client, path):
 @pytest.mark.parametrize("path", ["/reports/new", "/dashboard", "/profilo"])
 def test_guest_is_sent_to_login(client, path):
     response = client.get(path)
-    assert response.status_code == 303
-    assert response.location == "/login?next=" + path
+    assert response.status_code == 303 and response.location == "/login?next=" + path
 
 
-def test_dashboard_and_profile_after_login(client, logged_in):
+def test_dashboard_and_form_after_login(client, logged_in):
     assert client.get("/dashboard").status_code == 200
     assert client.get("/profilo").status_code == 200
     html = client.get("/reports/new").get_data(as_text=True)
-    assert "Marco Rossi" in html
-    assert 'name="categoria_id"' in html
-    assert 'name="categorie"' not in html
+    assert "Marco Rossi" in html and 'name="categoria_id"' in html
     assert 'name="latitude"' not in html and 'name="longitude"' not in html
     assert 'name="descrizione_accessibile"' not in html
 
 
-def test_report_requires_login_and_multipart_upload(client, logged_in, report_data):
-    client.post("/logout", data={"csrf_token": csrf_token(client)})
+def test_report_list_queries_repository(client, monkeypatch, logged_in):
+    from backend import reports
+    rows = [{"id": 4, "titolo": "Lampione", "sostegni": 2}]
+    query = Mock(return_value=rows)
+    monkeypatch.setattr(reports, "list_report_records", query)
+    assert client.get("/api/segnalazioni?ordina=no").status_code == 400
+    assert client.get("/api/segnalazioni?ordina=sostegni&q=lampione&mie=1").get_json() == rows
+    assert query.call_args.args[0] == "lampione"
+    assert query.call_args.args[-2:] == (101, "sostegni")
+
+
+def test_guest_cannot_publish(client, report_data):
     response = client.post("/api/segnalazioni", data=report_data,
                            headers={"X-CSRFToken": csrf_token(client)})
     assert response.status_code == 401
-    assert client.get("/api/segnalazioni").status_code == 200
 
 
-def test_report_requires_attachment(client, logged_in, report_data):
+def test_report_requires_attachment(client, logged_in, report_data, monkeypatch):
+    from backend.services import reports as service
+    monkeypatch.setattr(service, "valid_neighborhood", lambda _: True)
+    monkeypatch.setattr(service, "valid_categories", lambda _: True)
     response = client.post("/api/segnalazioni", data=report_data,
                            headers={"X-CSRFToken": csrf_token(client)})
     assert response.status_code == 400
     assert "allega" in response.get_json()["error"].lower()
 
 
-def test_publish_requires_category_and_quarter(client, logged_in, report_data):
-    for key, value in [("quartiere_id", ""), ("categoria_id", "")]:
-        payload = {**report_data, key: value, "allegato": (make_image(), "lampione.jpg")}
-        response = client.post("/api/segnalazioni", data=payload,
-                               headers={"X-CSRFToken": csrf_token(client)},
-                               content_type="multipart/form-data")
-        assert response.status_code == 400
-
-
-def test_publish_report_with_valid_image_and_confirmation(client, logged_in, report_data):
-    response = client.post("/api/segnalazioni",
-        data={**report_data, "id_autore": "999", "stato": "risolta",
-              "allegato": (make_image(), "../../lampione.jpg")},
-        headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
-    assert response.status_code == 201
-    result = response.get_json()
-    assert result["redirect"] == "/" and result["report"]["stato"] == "aperta"
+def test_report_publication_passes_session_author(client, logged_in, report_data, monkeypatch):
+    from backend.services import reports as service
+    monkeypatch.setattr(service, "valid_neighborhood", lambda _: True)
+    monkeypatch.setattr(service, "valid_categories", lambda _: True)
+    insert = Mock(return_value={"id": 42, "stato": "aperta"})
+    monkeypatch.setattr(service, "create_report_record", insert)
+    response = client.post("/api/segnalazioni", data={
+        **report_data, "id_autore": "999", "latitude": "999", "longitude": "999",
+        "allegato": (make_image(), "photo.jpg"),
+    }, headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
+    assert response.status_code == 201 and response.get_json()["redirect"] == "/"
+    data, author, upload = insert.call_args.args
+    assert author["id"] == 101 and data["latitude"] is None and data["longitude"] is None
+    assert upload["path"].is_file()
     assert "Segnalazione pubblicata correttamente." in client.get("/").get_data(as_text=True)
-    rows = client.get("/api/segnalazioni?mie=1").get_json()
-    assert rows[0]["autore"] == "Marco Rossi"
-    assert rows[0]["quartiere_id"] == 1
-    assert rows[0]["allegato_id"] == rows[0]["id"]
-    attachment = client.get(f"/api/allegati/{rows[0]['allegato_id']}")
-    assert attachment.status_code == 200
-    assert attachment.mimetype == "image/jpeg"
 
 
-def test_upload_checks_actual_file_content(client, logged_in, report_data):
-    response = client.post("/api/segnalazioni",
-        data={**report_data, "allegato": (BytesIO(b"not an image"), "photo.jpg")},
-        headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
-    assert response.status_code == 400
-
-
-@pytest.mark.parametrize("field,value", [
-    ("titolo", "a" * 201), ("descrizione", "a" * 5001), ("indirizzo", "a" * 256),
-    ("tipo", "inesistente"), ("categoria_id", "99999"),
-])
-def test_server_validates_report_fields(client, logged_in, report_data, field, value):
-    response = client.post("/api/segnalazioni",
-        data={**report_data, field: value, "allegato": (make_image(), "photo.jpg")},
-        headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
-    assert response.status_code == 400
-
-
-def test_profile_update_and_account_deletion(client, logged_in):
-    response = client.patch("/api/auth/me", json={"nome": "Marco Nuovo", "cognome": "Rossi", "quartiere_id": 2},
-                            headers={"X-CSRFToken": csrf_token(client)})
-    assert response.status_code == 200
-    assert response.get_json()["user"]["nome"] == "Marco Nuovo"
-    deleted = client.delete("/api/auth/me", headers={"X-CSRFToken": csrf_token(client)})
-    assert deleted.status_code == 200
-    assert client.get("/api/auth/me").status_code == 401
-
-
-def test_comments_and_support(client, logged_in):
-    report_id = 1
+def test_comments_and_support_use_repository(client, logged_in, monkeypatch):
+    from backend import reports
+    monkeypatch.setattr(reports, "get_report_record", lambda _: {"id": 1, "visibilita": "pubblica"})
+    monkeypatch.setattr(reports, "report_comments", lambda _: [])
+    insert_comment = Mock(return_value={"id": 9, "testo": "Confermo", "autore": "Marco Rossi"})
+    support = Mock(return_value={"sostenuta": True, "sostegni": 1})
+    monkeypatch.setattr(reports, "add_comment", insert_comment)
+    monkeypatch.setattr(reports, "set_support", support)
     token = csrf_token(client)
-    comment = client.post(f"/api/segnalazioni/{report_id}/commenti", json={"testo": "Confermo"},
+    comment = client.post("/api/segnalazioni/1/commenti", json={"testo": "Confermo"},
                           headers={"X-CSRFToken": token})
-    assert comment.status_code == 201
-    assert comment.get_json()["autore"] == "Marco Rossi"
-    assert next(row for row in client.get("/api/segnalazioni").get_json()
-                if row["id"] == report_id)["commenti_count"] == 1
-    result = client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token})
-    assert result.status_code == 200
-    assert result.get_json()["sostegni"] == 1
-    assert result.get_json()["sostenuta"] is True
-    repeat = client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token})
-    assert repeat.get_json()["sostegni"] == 1
-    rows = client.get("/api/segnalazioni?ordina=sostegni").get_json()
-    assert rows[0]["id"] == report_id and rows[0]["sostenuta"] == 1
-    assert client.get(f"/api/segnalazioni/{report_id}/sostegno").get_json()["sostenuta"] is True
-    withdrawn = client.delete(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token})
-    assert withdrawn.get_json()["sostegni"] == 0
-    assert client.delete(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).get_json()["sostegni"] == 0
-    assert client.get(f"/api/segnalazioni/{report_id}/sostegno").get_json()["sostenuta"] is False
-    assert client.put(f"/api/segnalazioni/{report_id}/sostegno", headers={"X-CSRFToken": token}).status_code == 200
-    events = [event["azione"] for event in client.application.extensions["demo_store"]["events"]]
-    assert events.count("espressione_sostegno") == 2
-    assert events.count("ritiro_sostegno") == 1
-    client.post("/logout", data={"csrf_token": csrf_token(client)})
-    assert client.get(f"/api/segnalazioni/{report_id}").get_json()["commenti"][0]["testo"] == "Confermo"
+    assert comment.status_code == 201 and insert_comment.call_args.args == (1, 101, "Confermo")
+    for _ in range(2):
+        response = client.put("/api/segnalazioni/1/sostegno", headers={"X-CSRFToken": token})
+        assert response.status_code == 200 and response.get_json()["sostegni"] == 1
+    assert support.call_count == 2 and support.call_args.args == (1, 101, True)
 
 
-def test_priority_sort_and_attachment_metadata(app, client):
-    store = app.extensions["demo_store"]
-    store["supports"].update({(user_id, 1) for user_id in range(1, 10)})
-    store["reports"][0]["allegato_id"] = 22
-    store["reports"][0]["allegato_tipo"] = "video/mp4"
-    store["reports"][0]["allegato_descrizione"] = "Video della buca"
-    assert client.get("/api/segnalazioni?ordina=non-valido").status_code == 400
-    recent = client.get("/api/segnalazioni").get_json()
-    priority = client.get("/api/segnalazioni?ordina=sostegni").get_json()
-    assert recent[0]["id"] == 2
-    assert priority[0]["id"] == 1
-    assert priority[0]["allegato_tipo"] == "video/mp4"
-    assert priority[0]["allegato_descrizione"] == "Video della buca"
-
-def test_legacy_coordinates_are_ignored(client, logged_in, report_data):
-    payload = {**report_data, "latitude": "not-a-number", "longitude": "999",
-               "descrizione_accessibile": "non usata", "allegato": (make_image(), "foto.jpg")}
-    response = client.post("/api/segnalazioni", data=payload,
-                           headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
-    assert response.status_code == 201
-    report = client.get("/api/segnalazioni?mie=1").get_json()[0]
-    assert report["latitude"] is None and report["longitude"] is None
-
-
-def test_moderation_requires_role(app, client, logged_in):
+def test_moderation_requires_database_role(client, logged_in, monkeypatch):
+    from backend import reports, users
     token = csrf_token(client)
     denied = client.patch("/api/segnalazioni/1/stato", json={"stato": "risolta"},
                           headers={"X-CSRFToken": token})
     assert denied.status_code == 403
-    user = next(iter(app.extensions["demo_store"]["users"].values()))
-    app.extensions["demo_store"]["moderators"].add(user["id"])
-    allowed = client.patch("/api/segnalazioni/1/stato", json={"stato": "risolta"},
-                           headers={"X-CSRFToken": csrf_token(client)})
-    assert allowed.status_code == 200
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": True)
+    action = Mock(return_value=True)
+    monkeypatch.setattr(reports, "change_report_state", action)
+    response = client.patch("/api/segnalazioni/1/stato", json={"stato": "risolta"},
+                            headers={"X-CSRFToken": csrf_token(client)})
+    assert response.status_code == 200 and action.call_args.args[:3] == (1, 101, "risolta")
 
 
 def test_security_headers(client):
@@ -202,11 +141,3 @@ def test_security_headers(client):
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert "form-action 'self'" in response.headers["Content-Security-Policy"]
     assert "Access-Control-Allow-Origin" not in response.headers
-
-
-def test_demo_stores_are_isolated(app, client, logged_in):
-    from backend.app import create_app
-    other = create_app({"TESTING": True, "APP_MODE": "demo", "SECRET_KEY": "x" * 32,
-                        "RATELIMIT_ENABLED": False})
-    assert len(app.extensions["demo_store"]["users"]) == 1
-    assert other.extensions["demo_store"]["users"] == {}

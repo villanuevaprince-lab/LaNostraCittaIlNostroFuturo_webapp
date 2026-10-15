@@ -36,9 +36,6 @@
     </nav>
   </header>
   <main id="main">
-    {% if config.APP_MODE == 'demo' %}
-      <p class="mode-note">Modalità demo: account e segnalazioni sono temporanei e si cancellano al riavvio.</p>
-    {% endif %}
     {% for category, message in get_flashed_messages(with_categories=true) %}
       <div class="notice notice-{{ category }}" role="status">{{ message }}</div>
     {% endfor %}

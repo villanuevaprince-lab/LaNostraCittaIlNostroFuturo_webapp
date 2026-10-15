@@ -1,9 +1,7 @@
-from backend.database import database_cursor, database_enabled, demo_store
+from backend.database import database_cursor
 
 
 def list_neighborhoods():
-    if not database_enabled():
-        return sorted(demo_store()["quartieri"], key=lambda row: row["nome"])
     with database_cursor() as cursor:
         cursor.execute("""SELECT IdQuartiere AS id, Nome AS nome, Municipio AS municipio
                           FROM QUARTIERE WHERE Attivo = TRUE ORDER BY Nome""")
@@ -11,8 +9,6 @@ def list_neighborhoods():
 
 
 def list_categories():
-    if not database_enabled():
-        return demo_store()["categorie"]
     with database_cursor() as cursor:
         cursor.execute("""SELECT IdCategoria AS id, Nome AS nome, Descrizione AS descrizione,
                                  Colore AS colore
@@ -21,8 +17,6 @@ def list_categories():
 
 
 def valid_neighborhood(neighborhood_id):
-    if not database_enabled():
-        return any(str(item["id"]) == str(neighborhood_id) for item in demo_store()["quartieri"])
     with database_cursor() as cursor:
         cursor.execute("SELECT 1 FROM QUARTIERE WHERE IdQuartiere = %s AND Attivo = TRUE",
                        (neighborhood_id,))
@@ -30,9 +24,6 @@ def valid_neighborhood(neighborhood_id):
 
 
 def valid_categories(category_ids):
-    if not database_enabled():
-        allowed = {str(item["id"]) for item in demo_store()["categorie"]}
-        return all(str(item) in allowed for item in category_ids)
     if not category_ids:
         return True
     marks = ",".join(["%s"] * len(category_ids))

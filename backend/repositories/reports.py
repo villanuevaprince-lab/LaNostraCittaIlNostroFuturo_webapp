@@ -1,31 +1,9 @@
-from copy import deepcopy
-
-from backend.database import database_cursor, database_enabled, demo_store
+from backend.database import database_cursor
 from datetime import datetime, timedelta
 
 
 def create_report_record(data, author, upload):
     initial_state = "aperta" if data["tipo"] == "segnalazione" else "in_valutazione"
-    if not database_enabled():
-        store = demo_store()
-        with store["lock"]:
-            report_id = max((row["id"] for row in store["reports"]), default=0) + 1
-            report = {
-                "id": report_id, "tipo": data["tipo"], "titolo": data["titolo"],
-                "descrizione": data["descrizione"], "stato": initial_state,
-                "indirizzo": data.get("indirizzo") or "", "autore": f"{author['nome']} {author['cognome']}",
-                "data_creazione": data["data_creazione"], "sostegni": 0,
-                "autore_id": author["id"],
-                "quartiere_id": int(data["quartiere_id"]), "categorie": data["categorie"],
-                "allegato": upload["reference"], "latitude": data.get("latitude"),
-                "longitude": data.get("longitude"),
-                "allegato_id": report_id, "allegato_tipo": upload["mime"],
-                "allegato_descrizione": upload["accessible_description"],
-            }
-            store["reports"].insert(0, report)
-            store["history"] = store.setdefault("history", {})
-            store["history"][report_id] = [{"stato_precedente": None, "stato_successivo": initial_state}]
-        return report
 
     with database_cursor(write=True) as cursor:
         cursor.execute("""INSERT INTO SEGNALAZIONE
@@ -60,30 +38,6 @@ def create_report_record(data, author, upload):
 
 def list_report_records(search="", neighborhood_id=None, category_id=None, state=None,
                         author_id=None, viewer_id=None, order="recenti"):
-    if not database_enabled():
-        store = demo_store()
-        term = search.casefold()
-        with store["lock"]:
-            rows = [deepcopy(row) for row in store["reports"] if row.get("visibilita", "pubblica") == "pubblica"
-                and (not term or term in (row["titolo"] + row["descrizione"] + row["indirizzo"]).casefold())
-                and (not neighborhood_id or str(row.get("quartiere_id")) == str(neighborhood_id))
-                and (not state or row["stato"] == state)
-                and (not category_id or str(category_id) in {str(c) for c in row.get("categorie", [])})
-                and (not author_id or row.get("autore_id") == author_id)]
-            for row in rows:
-                row["quartiere"] = next((q["nome"] for q in store["quartieri"]
-                                         if q["id"] == row.get("quartiere_id")), None)
-                row["sostegni"] = sum(report_id == row["id"] for _, report_id in store["supports"])
-                row["sostenuta"] = bool(viewer_id and (viewer_id, row["id"]) in store["supports"])
-                row["commenti_count"] = sum(c.get("visibilita", "pubblica") == "pubblica"
-                                             for c in store["comments"].get(row["id"], []))
-                if row.get("allegato_id"):
-                    row["allegato_tipo"] = row.get("allegato_tipo", "image/jpeg")
-        if order == "sostegni":
-            rows.sort(key=lambda row: (row["sostegni"], row["data_creazione"], row["id"]), reverse=True)
-        else:
-            rows.sort(key=lambda row: (row["data_creazione"], row["id"]), reverse=True)
-        return rows[:100]
     filters = ["s.Visibilita = 'pubblica'", "(%s = '' OR s.Titolo LIKE %s OR s.Descrizione LIKE %s OR COALESCE(s.Indirizzo, '') LIKE %s)"]
     params = [search, f"%{search}%", f"%{search}%", f"%{search}%"]
     if neighborhood_id:
@@ -126,8 +80,6 @@ def list_report_records(search="", neighborhood_id=None, category_id=None, state
 
 
 def get_report_record(report_id):
-    if not database_enabled():
-        return next((dict(row) for row in demo_store()["reports"] if row["id"] == report_id), None)
     with database_cursor() as cursor:
         cursor.execute("""SELECT s.IdSegnalazione AS id, s.IdQuartiere AS quartiere_id,
             s.Tipo AS tipo, s.Titolo AS titolo, s.Descrizione AS descrizione, s.Stato AS stato,
@@ -139,11 +91,6 @@ def get_report_record(report_id):
 
 
 def report_comments(report_id):
-    if not database_enabled():
-        store = demo_store()
-        with store["lock"]:
-            return deepcopy([comment for comment in store["comments"].get(report_id, [])
-                             if comment.get("visibilita", "pubblica") == "pubblica"])
     with database_cursor() as cursor:
         cursor.execute("""SELECT c.IdCommento AS id, c.Testo AS testo,
             c.DataPubblicazione AS data, CONCAT(u.Nome, ' ', u.Cognome) AS autore
@@ -156,15 +103,6 @@ def report_comments(report_id):
 
 
 def add_comment(report_id, user_id, text):
-    if not database_enabled():
-        store = demo_store()
-        with store["lock"]:
-            comment = {"id": 1 + max((c["id"] for rows in store["comments"].values()
-                                      for c in rows), default=0), "testo": text,
-                       "autore": f"{store['users'][user_id]['nome']} {store['users'][user_id]['cognome']}",
-                       "data": datetime.now().isoformat(timespec="seconds")}
-            store["comments"].setdefault(report_id, []).append(comment)
-            return deepcopy(comment)
     with database_cursor(write=True) as cursor:
         cursor.execute("INSERT INTO COMMENTO (IdAutore, IdSegnalazione, Testo, Visibilita) VALUES (%s, %s, %s, 'pubblica')",
                        (user_id, report_id, text))
@@ -181,21 +119,6 @@ def add_comment(report_id, user_id, text):
 
 
 def set_support(report_id, user_id, active):
-    if not database_enabled():
-        store = demo_store()
-        key = (int(user_id), int(report_id))
-        with store["lock"]:
-            changed = (key in store["supports"]) != active
-            if active:
-                store["supports"].add(key)
-            else:
-                store["supports"].discard(key)
-            if changed:
-                store.setdefault("events", []).append({
-                    "azione": "espressione_sostegno" if active else "ritiro_sostegno",
-                    "utente_id": user_id, "segnalazione_id": report_id})
-            count = sum(rid == report_id for _, rid in store["supports"])
-            return {"sostenuta": active, "sostegni": count}
     with database_cursor(write=True) as cursor:
         cursor.execute("""SELECT IdSostegno, DataRitiro FROM SOSTEGNO
             WHERE IdUtente=%s AND IdSegnalazione=%s FOR UPDATE""", (user_id, report_id))
@@ -233,13 +156,6 @@ def set_support(report_id, user_id, active):
 def moderate_report(report_id, moderator_id, visibility):
     if visibility not in {"nascosta", "rimossa", "pubblica"}:
         return False
-    if not database_enabled():
-        report = next((row for row in demo_store()["reports"] if row["id"] == report_id), None)
-        if not report:
-            return None
-        report["visibilita"] = visibility
-        demo_store().setdefault("events", []).append({"azione": "moderazione_segnalazione", "id": report_id})
-        return True
     with database_cursor(write=True) as cursor:
         cursor.execute("UPDATE SEGNALAZIONE SET Visibilita=%s WHERE IdSegnalazione=%s",
                        (visibility, report_id))
@@ -253,14 +169,6 @@ def moderate_report(report_id, moderator_id, visibility):
 
 
 def moderate_comment(comment_id, moderator_id):
-    if not database_enabled():
-        for comments in demo_store().get("comments", {}).values():
-            comment = next((row for row in comments if row["id"] == comment_id), None)
-            if comment:
-                comment["visibilita"] = "rimossa"
-                demo_store().setdefault("events", []).append({"azione": "moderazione_commento", "id": comment_id})
-                return True
-        return False
     with database_cursor(write=True) as cursor:
         cursor.execute("UPDATE COMMENTO SET Visibilita='rimossa' WHERE IdCommento=%s", (comment_id,))
         if cursor.rowcount == 0:
@@ -273,13 +181,6 @@ def moderate_comment(comment_id, moderator_id):
 
 
 def block_user(user_id, moderator_id, reason, days):
-    if not database_enabled():
-        user = demo_store()["users"].get(user_id)
-        if not user or user["stato_account"] != "attivo":
-            return False
-        user["stato_account"] = "bloccato"
-        demo_store().setdefault("events", []).append({"azione": "blocco_utente", "id": user_id, "motivazione": reason})
-        return True
     end_date = datetime.now() + timedelta(days=days) if days else None
     with database_cursor(write=True) as cursor:
         cursor.execute("SELECT IdUtente FROM UTENTE WHERE IdUtente=%s AND StatoAccount='attivo' FOR UPDATE", (user_id,))
@@ -297,13 +198,6 @@ def block_user(user_id, moderator_id, reason, days):
 
 
 def unblock_user(user_id, moderator_id, reason):
-    if not database_enabled():
-        user = demo_store()["users"].get(user_id)
-        if not user or user["stato_account"] != "bloccato":
-            return False
-        user["stato_account"] = "attivo"
-        demo_store().setdefault("events", []).append({"azione": "revoca_blocco", "id": user_id, "motivazione": reason})
-        return True
     with database_cursor(write=True) as cursor:
         cursor.execute("""SELECT IdBlocco FROM BLOCCO
             WHERE IdUtenteBloccato=%s AND DataRevoca IS NULL
@@ -332,20 +226,6 @@ def change_report_state(report_id, user_id, new_state, reason=None):
         "risolta": {"aperta", "chiusa"},
         "chiusa": set(),
     }
-    if not database_enabled():
-        report = next((row for row in demo_store()["reports"] if row["id"] == report_id), None)
-        if not report:
-            return False
-        if new_state not in transitions:
-            return None
-        previous = report["stato"]
-        if new_state not in transitions.get(previous, set()):
-            return None
-        report["stato"] = new_state
-        demo_store().setdefault("history", {}).setdefault(report_id, []).append({
-            "stato_precedente": previous, "stato_successivo": new_state, "motivazione": reason,
-        })
-        return True
     with database_cursor(write=True) as cursor:
         cursor.execute("SELECT Stato FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
         report = cursor.fetchone()
@@ -367,10 +247,6 @@ def change_report_state(report_id, user_id, new_state, reason=None):
 
 
 def attachment_path(attachment_id):
-    if not database_enabled():
-        row = next((report for report in demo_store()["reports"]
-                    if report.get("allegato_id") == attachment_id), None)
-        return row.get("allegato") if row else None
     with database_cursor() as cursor:
         cursor.execute("""SELECT a.RiferimentoFile FROM ALLEGATO a
             JOIN SEGNALAZIONE s ON s.IdSegnalazione=a.IdSegnalazione
@@ -380,8 +256,6 @@ def attachment_path(attachment_id):
 
 
 def user_supports(report_id, user_id):
-    if not database_enabled():
-        return (int(user_id), int(report_id)) in demo_store()["supports"]
     with database_cursor() as cursor:
         cursor.execute("SELECT 1 FROM SOSTEGNO WHERE IdUtente=%s AND IdSegnalazione=%s AND DataRitiro IS NULL",
                        (user_id, report_id))
@@ -389,10 +263,6 @@ def user_supports(report_id, user_id):
 
 
 def list_active_users(exclude_user_id=None):
-    if not database_enabled():
-        return [{"id": user["id"], "nome": user["nome"], "cognome": user["cognome"]}
-                for user in demo_store()["users"].values()
-                if user["stato_account"] == "attivo" and user["id"] != exclude_user_id]
     with database_cursor() as cursor:
         cursor.execute("""SELECT IdUtente AS id, Nome AS nome, Cognome AS cognome
             FROM UTENTE WHERE StatoAccount='attivo' AND (%s IS NULL OR IdUtente <> %s)
