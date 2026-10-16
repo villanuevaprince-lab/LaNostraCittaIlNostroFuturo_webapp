@@ -37,11 +37,11 @@
           <option value="">Caricamento quartieri…</option>
         </select>
       </label>
-      <label class="field">Categoria
-        <select name="categoria_id" id="category-select" required>
-          <option value="">Caricamento categorie…</option>
-        </select>
-      </label>
+      <fieldset class="category-fieldset">
+        <legend>Categorie (da 1 a 5)</legend>
+        <div id="category-options" class="tag-options">Caricamento categorie…</div>
+        <p class="hint">Seleziona tutte le categorie pertinenti.</p>
+      </fieldset>
       <div class="location-picker">
         <label class="field" for="location-search">Cerca il luogo a Milano
           <input id="location-search" type="search" maxlength="120" placeholder="Via, piazza o zona">

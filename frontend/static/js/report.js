@@ -87,9 +87,32 @@ async function fillSelect(url, select, emptyLabel) {
   rows.forEach((row) => select.add(new Option(row.nome, row.id)));
 }
 
+async function fillCategories() {
+  const response = await fetch("/api/categorie", { credentials: "same-origin" });
+  if (!response.ok) throw new Error("Impossibile caricare le categorie.");
+  const categories = await response.json();
+  const container = document.querySelector("#category-options");
+  container.replaceChildren();
+  categories.forEach((category) => {
+    const label = document.createElement("label"); label.className = "tag-option";
+    const input = document.createElement("input");
+    input.type = "checkbox"; input.name = "categoria_ids"; input.value = category.id;
+    input.addEventListener("change", () => {
+      const chosen = container.querySelectorAll('input:checked');
+      if (chosen.length > 5) {
+        input.checked = false;
+        status.textContent = "Puoi scegliere al massimo cinque categorie.";
+      }
+    });
+    const text = document.createElement("span"); text.textContent = category.nome;
+    label.append(input, text); container.append(label);
+  });
+  if (!categories.length) throw new Error("Nessuna categoria disponibile.");
+}
+
 Promise.all([
   fillSelect("/api/quartieri", document.querySelector("#neighborhood-select"), "quartiere"),
-  fillSelect("/api/categorie", document.querySelector("#category-select"), "categoria"),
+  fillCategories(),
 ]).catch((error) => { status.textContent = error.message; });
 
 form.addEventListener("submit", async (event) => {
@@ -100,6 +123,11 @@ form.addEventListener("submit", async (event) => {
     return;
   }
   if (!form.reportValidity()) return;
+  if (!form.querySelector('input[name="categoria_ids"]:checked')) {
+    status.textContent = "Seleziona almeno una categoria.";
+    form.querySelector('input[name="categoria_ids"]')?.focus();
+    return;
+  }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   form.setAttribute("aria-busy", "true");

@@ -8,7 +8,10 @@ import pytest
 from backend import database, users
 from backend.app import create_app
 from backend.repositories import catalog
-from backend.repositories.reports import create_report_record, list_report_records, set_support, moderate_reports, withdraw_report
+from backend.repositories.reports import (
+    create_report_record, get_report_record, list_moderation_users, list_report_records,
+    moderate_reports, permanently_ban_user, set_support, withdraw_report,
+)
 
 
 @pytest.fixture()
@@ -129,6 +132,54 @@ def test_search_is_parameterized(fake_mysql):
     assert params == (5, 5, text, *([f"%{text}%"] * 3))
     assert "ORDER BY sostegni DESC" in sql
     assert rows[0]["data_creazione"] == "2026-09-29T00:00:00"
+
+
+def test_multiple_categories_are_filtered_and_returned_as_tags(fake_mysql):
+    _, cursor = fake_mysql
+    cursor.fetchall.return_value = [{"data_creazione": datetime(2026, 9, 29),
+        "categorie_json": '[{"id":4,"nome":"Mobilità"},{"id":2,"nome":"Ambiente"}]'}]
+    rows = list_report_records(category_ids=[2, 4])
+    sql, params = cursor.execute.call_args.args
+    assert "sc.IdCategoria IN (%s,%s)" in sql
+    assert params[-2:] == (2, 4)
+    assert [category["nome"] for category in rows[0]["categorie"]] == ["Ambiente", "Mobilità"]
+    cursor.fetchone.return_value = {"categorie_json": '[{"id":2,"nome":"Ambiente"}]'}
+    assert get_report_record(3)["categorie"] == [{"id": 2, "nome": "Ambiente"}]
+
+
+def test_user_search_is_parameterized_and_includes_block_type(fake_mysql):
+    _, cursor = fake_mysql
+    cursor.fetchall.return_value = [{"id": 7, "blocco_fine": datetime(2026, 11, 1),
+        "email": "ada@example.com", "tipo_blocco": "temporaneo"}]
+    page = list_moderation_users(search="a%_!", limit=25)
+    sql, params = cursor.execute.call_args.args
+    assert "a%_!" not in sql and "LIKE %s ESCAPE '!'" in sql
+    assert "permanente" in sql and "u.Email" in sql
+    assert params[3] == "a!%!_!!%"
+    assert page["items"][0]["blocco_fine"] == "2026-11-01T00:00:00"
+
+
+def test_permanent_ban_preserves_prior_block_and_audits(fake_mysql):
+    connection, cursor = fake_mysql
+    cursor.fetchone.side_effect = [
+        {"StatoAccount": "bloccato"}, {"IdBlocco": 8, "DataFinePrevista": datetime(2026, 11, 1)},
+    ]
+    assert permanently_ban_user(7, 9, "Violazioni ripetute") is True
+    sql = [call.args[0] for call in cursor.execute.call_args_list]
+    assert any("DataRevoca=CURRENT_TIMESTAMP" in query for query in sql)
+    assert any("INSERT INTO BLOCCO" in query and "NULL" in query for query in sql)
+    assert any("'ban_permanente'" in query for query in sql)
+    assert all("DELETE" not in query for query in sql)
+    connection.commit.assert_called_once()
+
+
+def test_permanent_ban_rejects_existing_permanent_block(fake_mysql):
+    connection, cursor = fake_mysql
+    cursor.fetchone.side_effect = [{"StatoAccount": "bloccato"},
+        {"IdBlocco": 8, "DataFinePrevista": None}]
+    assert permanently_ban_user(7, 9, "Doppio ban") is False
+    assert not any("INSERT INTO BLOCCO" in call.args[0] for call in cursor.execute.call_args_list)
+    connection.commit.assert_called_once()
 
 
 def test_active_support_is_not_recorded_twice(fake_mysql):

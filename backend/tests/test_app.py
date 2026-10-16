@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 from PIL import Image
 import pytest
+from werkzeug.datastructures import MultiDict
 
 from conftest import csrf_token
 
@@ -32,7 +33,7 @@ def test_homepage_has_filters_and_separate_creation_page(client):
     assert response.status_code == 200
     assert 'href="/reports/new"' in html
     assert 'id="report-form"' not in html
-    assert 'id="filter-category"' in html and 'id="sort-reports"' in html
+    assert 'id="filter-categories"' in html and 'id="sort-reports"' in html
     assert "Modalità demo" not in html
 
 
@@ -54,7 +55,7 @@ def test_dashboard_and_form_after_login(client, logged_in):
     assert client.get("/dashboard").status_code == 200
     assert client.get("/profilo").status_code == 200
     html = client.get("/reports/new").get_data(as_text=True)
-    assert "Marco Rossi" in html and 'name="categoria_id"' in html
+    assert "Marco Rossi" in html and 'id="category-options"' in html
     assert 'type="hidden" name="latitude"' in html and 'type="hidden" name="longitude"' in html
     assert 'name="descrizione_accessibile"' not in html
 
@@ -68,6 +69,16 @@ def test_report_list_queries_repository(client, monkeypatch, logged_in):
     assert client.get("/api/segnalazioni?ordina=sostegni&q=lampione&mie=1").get_json() == rows
     assert query.call_args.args[0] == "lampione"
     assert query.call_args.args[-2:] == (101, "sostegni")
+
+
+def test_multi_category_filter_uses_bound_ids(client, monkeypatch):
+    from backend import reports
+    query = Mock(return_value=[])
+    monkeypatch.setattr(reports, "list_report_records", query)
+    assert client.get("/api/segnalazioni?categoria=3&categoria=7").status_code == 200
+    assert query.call_args.args[2] == [3, 7]
+    assert client.get("/api/segnalazioni?categoria=3&categoria=3").status_code == 400
+    assert client.get("/api/segnalazioni?categoria=abc").status_code == 400
 
 
 def test_guest_cannot_publish(client, report_data):
@@ -101,6 +112,34 @@ def test_report_publication_passes_session_author(client, logged_in, report_data
     assert author["id"] == 101 and str(data["latitude"]) == "45.464200" and str(data["longitude"]) == "9.190000"
     assert upload["path"].is_file()
     assert "Contenuto inviato." in client.get("/").get_data(as_text=True)
+
+
+def test_report_saves_multiple_distinct_categories(client, logged_in, report_data, monkeypatch):
+    from backend.services import reports as service
+    monkeypatch.setattr(service, "valid_neighborhood", lambda _: True)
+    valid = Mock(return_value=True)
+    monkeypatch.setattr(service, "valid_categories", valid)
+    insert = Mock(return_value={"id": 42})
+    monkeypatch.setattr(service, "create_report_record", insert)
+    data = MultiDict((key, value) for key, value in report_data.items() if key != "categoria_id")
+    data.add("categoria_ids", "2")
+    data.add("categoria_ids", "4")
+    data.add("allegato", (make_image(), "photo.jpg"))
+    response = client.post("/api/segnalazioni", data=data,
+        headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
+    assert response.status_code == 201
+    assert insert.call_args.args[0]["categorie"] == [2, 4]
+    valid.assert_called_once_with([2, 4])
+
+
+def test_report_rejects_duplicate_categories(client, logged_in, report_data):
+    data = MultiDict((key, value) for key, value in report_data.items() if key != "categoria_id")
+    data.add("categoria_ids", "2")
+    data.add("categoria_ids", "2")
+    response = client.post("/api/segnalazioni", data=data,
+        headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
+    assert response.status_code == 400
+    assert "distinte" in response.get_json()["error"]
 
 
 def test_report_rejects_out_of_city_coordinates(client, logged_in, report_data, monkeypatch):
@@ -172,6 +211,33 @@ def test_moderation_requires_database_role(client, logged_in, monkeypatch):
     response = client.patch("/api/segnalazioni/1/stato", json={"stato": "risolta"},
                             headers={"X-CSRFToken": csrf_token(client)})
     assert response.status_code == 200 and action.call_args.args[:3] == (1, 101, "risolta")
+
+
+def test_user_search_and_permanent_ban_require_moderator(client, logged_in, monkeypatch):
+    from backend import reports, users
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": False)
+    token = csrf_token(client)
+    path = "/api/moderazione/utenti/203/ban-permanente"
+    payload = {"motivazione": "Violazioni ripetute"}
+    assert client.post(path, json=payload, headers={"X-CSRFToken": token}).status_code == 403
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": True)
+    query = Mock(return_value={"items": [], "next_cursor": None})
+    ban = Mock(return_value=True)
+    monkeypatch.setattr(reports, "list_moderation_users", query)
+    monkeypatch.setattr(reports, "permanently_ban_user", ban)
+    assert client.get("/api/moderazione/utenti?q=rossi&cursor=44").status_code == 200
+    query.assert_called_once_with(44, search="rossi")
+    assert client.post(path, json={"motivazione": "   "}, headers={"X-CSRFToken": token}).status_code == 400
+    assert client.post(path, json=payload, headers={"X-CSRFToken": token}).status_code == 200
+    ban.assert_called_once_with(203, 101, "Violazioni ripetute")
+    ban.return_value = False
+    assert client.post(path, json=payload, headers={"X-CSRFToken": token}).status_code == 409
+
+
+def test_state_catalog_exposes_allowed_transitions(client):
+    states = {row["codice"]: row for row in client.get("/api/stati").get_json()}
+    assert "risolta" in states["aperta"]["prossimi"]
+    assert states["chiusa"]["prossimi"] == []
 
 
 def test_security_headers(client):

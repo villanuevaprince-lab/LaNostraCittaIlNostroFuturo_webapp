@@ -60,7 +60,7 @@ Pubblico. Parametri facoltativi:
 
 - `q`: cerca titolo, descrizione o indirizzo;
 - `quartiere`: ID del quartiere;
-- `categoria`: ID categoria;
+- `categoria`: ID categoria ripetibile (fino a 10, logica OR: almeno una corrisponde);
 - `stato`: codice stato;
 - `ordina`: `recenti` (default) oppure `sostegni` (priorità per sostegni attivi);
 - `mie=1`: contenuti dell'utente autenticato.
@@ -68,7 +68,7 @@ Pubblico. Parametri facoltativi:
 Risultati limitati a 100; l'ordinamento per sostegni usa data e ID come
 discriminanti. Ogni riga include `sostegni`, `commenti_count`, `sostenuta`
 per l'utente corrente e ID, MIME e descrizione del primo allegato.
-Non include email/hash.
+Include `categorie` come array di oggetti `{id, nome}` per i tag; non include email/hash.
 
 ### `POST /api/segnalazioni`
 
@@ -80,7 +80,7 @@ Richiede sessione, CSRF e `multipart/form-data`. Campi:
 | `titolo` | 3–200 caratteri |
 | `descrizione` | 10–5000 caratteri |
 | `quartiere_id` | ID di un quartiere attivo |
-| `categoria_id` | Un ID categoria attiva, scelto dal menu a tendina |
+| `categoria_ids` | Da 1 a 5 ID distinti di categorie attive (campo ripetibile); `categoria_id` è accettato per compatibilità |
 | `indirizzo` | Obbligatorio, 3–255 caratteri; correggibile dopo il posizionamento |
 | `latitude`, `longitude` | Obbligatorie, coordinate del pin nell'area di Milano |
 | `allegato` | Obbligatorio; JPEG, PNG, WebP, MP4 o WebM; massimo 20 MB |
@@ -143,7 +143,10 @@ e CSRF sulle mutazioni.
   keyset (`bozza`, `pubblica`, `nascosta`), `items` e `next_cursor`.
 - `POST /api/moderazione/segnalazioni/azioni`: JSON `ids` (1–50 interi) e
   `azione` (`approva`, `rifiuta`, `nascondi`), transazione e audit per elemento.
-- `GET /api/moderazione/utenti?cursor=<id>`: account non moderatori in pagine da 25.
+- `GET /api/moderazione/utenti?cursor=<id>&q=<prefisso>`: account non moderatori
+  in pagine da 25, ricerca per prefisso di nome, cognome, email oppure ID esatto;
+  include email, `tipo_blocco` (`attivo`, `temporaneo`, `permanente`, `scaduto`)
+  e `blocco_fine`. La UI seleziona tutte le righe caricate, max 50 per batch.
 - `PATCH /api/segnalazioni/<id>/stato`: JSON `stato`, opzionale `motivazione`;
   valida transizioni, aggiorna `SEGNALAZIONE`, `STORICO_STATO` ed `EVENTO_LOG`.
 - `PATCH /api/moderazione/segnalazioni/<id>`: JSON `visibilita` (`nascosta`,
@@ -151,11 +154,17 @@ e CSRF sulle mutazioni.
 - `DELETE /api/moderazione/commenti/<id>`: rende il commento `rimossa` e registra evento.
 - `POST /api/moderazione/utenti/<id>/blocco`: JSON `motivazione` obbligatoria e
   `giorni` 1–365 o `null`; aggiorna `UTENTE`, `BLOCCO` ed evento.
+- `POST /api/moderazione/utenti/<id>/ban-permanente`: JSON `motivazione`
+  obbligatoria, massimo 3000 caratteri. Revoca il blocco temporaneo corrente,
+  ne registra uno senza scadenza e disabilita l'accesso dell'utente; storico,
+  contenuti e relazioni restano conservati. Non cancella fisicamente l'account.
 - `POST /api/moderazione/utenti/<id>/sblocco`: JSON `motivazione` facoltativa;
   registra revoca e riattiva l'account.
 
-`rimossa` è terminale: un contenuto ritirato o rifiutato non può essere
-approvato nuovamente. Blocco utenti moderatori non consentito.
+`GET /api/stati` include `prossimi` con le transizioni consentite dalla
+macchina a stati. `rimossa` è terminale: un contenuto ritirato o rifiutato non
+può essere approvato nuovamente. Blocco utenti moderatori non consentito;
+la revoca amministrativa può rimuovere anche un ban senza scadenza.
 
 ## Mappa
 

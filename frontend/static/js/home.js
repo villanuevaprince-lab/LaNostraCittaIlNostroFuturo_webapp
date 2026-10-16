@@ -2,7 +2,7 @@ const list = document.querySelector("#report-list");
 const status = document.querySelector("#list-status");
 const search = document.querySelector("#search-input");
 const neighborhood = document.querySelector("#filter-neighborhood");
-const category = document.querySelector("#filter-category");
+const categoriesRoot = document.querySelector("#filter-categories");
 const state = document.querySelector("#filter-state");
 const sort = document.querySelector("#sort-reports");
 const isAuthenticated = document.querySelector("[data-authenticated]")?.dataset.authenticated === "true";
@@ -21,7 +21,12 @@ async function loadFilters() {
     fetch("/api/quartieri").then(readJSON), fetch("/api/categorie").then(readJSON),
   ]);
   quartieri.forEach((row) => neighborhood.add(new Option(row.nome, row.id)));
-  categories.forEach((row) => category.add(new Option(row.nome, row.id)));
+  categories.forEach((row) => {
+    const label = document.createElement("label"); label.className = "tag-option";
+    const input = document.createElement("input"); input.type = "checkbox"; input.value = row.id;
+    const text = document.createElement("span"); text.textContent = row.nome;
+    label.append(input, text); categoriesRoot.append(label);
+  });
 }
 
 async function loadReports() {
@@ -31,7 +36,7 @@ async function loadReports() {
   const params = new URLSearchParams();
   if (search.value.trim()) params.set("q", search.value.trim());
   if (neighborhood.value) params.set("quartiere", neighborhood.value);
-  if (category.value) params.set("categoria", category.value);
+  categoriesRoot.querySelectorAll("input:checked").forEach((input) => params.append("categoria", input.value));
   if (state.value) params.set("stato", state.value);
   params.set("ordina", sort.value);
   try {
@@ -77,6 +82,14 @@ function createCard(report) {
     meta.append(item);
   });
   card.append(badge, title, description, meta);
+  if (report.categorie?.length) {
+    const tags = document.createElement("div"); tags.className = "tag-list";
+    report.categorie.forEach((category) => {
+      const tag = document.createElement("span"); tag.className = "category-tag";
+      tag.textContent = category.nome; tags.append(tag);
+    });
+    card.append(tags);
+  }
 
   if (report.allegato_id) {
     const url = `/api/allegati/${report.allegato_id}`;
@@ -231,5 +244,5 @@ function createCard(report) {
 }
 
 search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadReports, 250); });
-[neighborhood, category, state, sort].forEach((select) => select.addEventListener("change", loadReports));
+[neighborhood, state, sort, categoriesRoot].forEach((element) => element.addEventListener("change", loadReports));
 loadFilters().then(loadReports).catch((error) => { status.textContent = error.message; });

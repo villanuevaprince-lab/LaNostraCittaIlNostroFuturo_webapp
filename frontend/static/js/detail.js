@@ -10,8 +10,13 @@ fetch(`/api/segnalazioni/${detail.dataset.reportId}`, { credentials: "same-origi
     badge.textContent = `${report.tipo} · ${report.visibilita === "bozza" ? "in revisione" : report.visibilita}`;
     document.querySelector("#detail-description").textContent = report.descrizione;
     document.querySelector("#detail-meta").textContent = [report.autore, report.quartiere,
-      report.categorie, report.stato?.replaceAll("_", " "), report.data_creazione?.slice(0, 10)]
+      report.stato?.replaceAll("_", " "), report.data_creazione?.slice(0, 10)]
       .filter(Boolean).join(" · ");
+    const tags = document.querySelector("#detail-categories");
+    (report.categorie || []).forEach((category) => {
+      const tag = document.createElement("span"); tag.className = "category-tag";
+      tag.textContent = category.nome; tags.append(tag);
+    });
     document.querySelector("#detail-address").textContent = report.indirizzo || "Indirizzo non indicato";
     if (report.allegato_id && report.visibilita !== "rimossa") {
       const media = report.allegato_tipo?.startsWith("video/")

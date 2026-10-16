@@ -11,20 +11,23 @@ commenti e sostegni sono salvati nel database.
   preesistenti vengono verificati e aggiornati al login.
 - Cookie di sessione HttpOnly, SameSite=Lax, CSRF per le richieste mutative e
   limiti per login/registrazione.
-- Bacheca con ricerca per testo, quartiere, categoria e stato; ordine per data
-  o sostegni attivi e conteggio dei commenti visibile sulle schede.
+- Bacheca con ricerca per testo, quartiere, categorie multiple (almeno una
+  corrispondente) e stato; le categorie appaiono come tag sulle schede.
 - Profilo con bio, quartiere di interesse, preferenza notifiche, avatar e cambio
   password verificato; modifica password invalida le altre sessioni.
 - Pagina dedicata con mappa Leaflet, ricerca indirizzo su richiesta, pin
-  trascinabile, coordinate e indirizzo salvati in MySQL; foto/video obbligatorio.
+  trascinabile, selezione di 1–5 categorie, coordinate e indirizzo salvati in
+  MySQL; foto/video obbligatorio.
   I nuovi contenuti attendono approvazione e sono visibili subito all'autore.
 - Validazione upload JPEG/PNG/WebP/MP4/WebM fino a 20 MB. Le immagini sono
   verificate con Pillow e risalvate senza metadati EXIF; non si estraggono
   coordinate GPS.
 - Commenti pubblici visibili anche agli ospiti; pubblicazione e sostegno
   richiedono account e CSRF. I sostegni ripetuti sono idempotenti.
-- Coda moderazione a paginazione keyset, azioni individuali o batch (massimo
-  50), rimozione commenti, blocco/sblocco account ed eventi di audit.
+- Coda moderazione a paginazione keyset, selezione di tutte le righe caricate
+  (massimo 50 per operazione), cambio di stato, azioni individuali o batch;
+  tabella utenti ricercabile con email e tipo di blocco. Ban senza scadenza,
+  blocchi temporanei e revoche sono registrati negli eventi di audit.
 - Scheda dettaglio con posizione su mappa e ritiro autonomo dalla dashboard.
 - Storico stato, evento di invio e allegato salvati nella stessa
   transazione MySQL della segnalazione. La pubblicazione avviene dopo la revisione;
@@ -103,6 +106,10 @@ Rimuovi `APP_MODE=demo` da eventuali vecchi `.env`: non è più supportato.
 6. Avvia l'app. La connessione richiede il certificato CA e verifica certificato
    e hostname TLS. L'app non esegue migrazioni automatiche.
 
+Le funzioni di selezione multipla, tag e ban permanente usano le tabelle
+`SEGNALAZIONE_CATEGORIA` e `BLOCCO` già presenti: non serve una nuova
+migrazione oltre alla 004 per questa modifica.
+
 Gli 88 NIL provengono dal dataset pubblico DS964 del Comune di Milano:
 <https://dati.comune.milano.it/dataset/e8e765fc-d882-40b8-95d8-16ff3d39eb7c>.
 Non mettere password, certificato CA o `.env` nel repository; il seed SQL si
@@ -139,15 +146,15 @@ Le richieste che modificano dati richiedono il token CSRF nell'header
 | `POST /api/auth/me/password`, `POST /api/auth/me/avatar` | Sessione | Password e immagine profilo |
 | `GET /api/geo/search`, `GET /api/geo/reverse` | Sessione | Geocodifica di Milano su richiesta |
 | `GET /api/quartieri`, `GET /api/categorie` | Pubblico | Cataloghi attivi |
-| `GET /api/segnalazioni` | Pubblico | Ricerca, filtri, `?ordina=sostegni`; `?mie=1` richiede login |
-| `POST /api/segnalazioni` | Sessione | `multipart/form-data`, allegato obbligatorio |
+| `GET /api/segnalazioni` | Pubblico | Ricerca, filtri; `categoria` ripetibile; `?mie=1` richiede login |
+| `POST /api/segnalazioni` | Sessione | `multipart/form-data`, 1–5 `categoria_ids`, allegato obbligatorio |
 | `GET /api/segnalazioni/<id>` | Pubblico | Dettaglio e commenti |
 | `DELETE /api/segnalazioni/<id>` | Autore | Ritiro logico del contenuto |
 | `POST /api/segnalazioni/<id>/commenti` | Sessione | Pubblica un commento |
 | `GET/PUT/DELETE /api/segnalazioni/<id>/sostegno` | Sessione | Legge, esprime o ritira sostegno (richieste ripetute idempotenti) |
 | `GET /api/allegati/<id>` | Pubblico se segnalazione pubblica | Scarica allegato controllato |
 | `PATCH /api/segnalazioni/<id>/stato` | Moderatore | Transizione di stato e storico |
-| `/api/moderazione/*` | Moderatore | Coda, azioni batch, commenti e blocchi |
+| `/api/moderazione/*` | Moderatore | Coda, azioni batch, ricerca utenti e blocchi permanenti/temporanei |
 
 La documentazione dettagliata è in [`docs/api.md`](docs/api.md) e
 [`docs/architettura.md`](docs/architettura.md).

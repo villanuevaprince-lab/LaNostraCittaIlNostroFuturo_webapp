@@ -12,6 +12,7 @@
       </select></label></div>
     <div class="toolbar" aria-label="Azioni sui contenuti selezionati">
       <span id="selected-count">0 selezionati</span>
+      <button id="select-all-reports" class="button button-secondary" type="button">Seleziona tutte le visibili</button>
       <button id="bulk-approve" class="button" type="button" disabled>Approva selezionati</button>
       <button id="bulk-reject" class="button button-danger" type="button" disabled>Rifiuta selezionati</button>
     </div>
@@ -21,7 +22,14 @@
   </section>
   <section class="panel"><p class="eyebrow">Account</p><h2>Gestione utenti</h2>
     <p class="hint">I moderatori non possono essere bloccati da questa schermata.</p>
-    <div id="moderation-users" class="moderation-list"></div>
+    <label class="field user-search">Cerca per nome, cognome, email o ID
+      <input id="user-search" type="search" maxlength="100" autocomplete="off" placeholder="Cerca un utente"></label>
+    <div class="table-scroll"><table class="user-table">
+      <thead><tr><th scope="col">Utente</th><th scope="col">Email</th><th scope="col">Stato</th>
+        <th scope="col">Fine blocco</th><th scope="col">Azioni</th></tr></thead>
+      <tbody id="moderation-users"></tbody>
+    </table></div>
+    <p id="users-status" class="status" role="status"></p>
     <button id="users-next" class="button button-secondary" type="button" hidden>Carica altri utenti</button>
   </section>
 {% endblock %}

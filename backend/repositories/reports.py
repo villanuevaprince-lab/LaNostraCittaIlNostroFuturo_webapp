@@ -1,5 +1,18 @@
+import json
+
 from backend.database import database_cursor
 from datetime import datetime, timedelta
+
+
+STATE_TRANSITIONS = {
+    "nuova": {"aperta", "in_valutazione", "chiusa"},
+    "aperta": {"in_valutazione", "in_lavorazione", "presa_in_carico", "risolta", "chiusa"},
+    "in_valutazione": {"in_lavorazione", "presa_in_carico", "risolta", "chiusa"},
+    "in_lavorazione": {"presa_in_carico", "risolta", "chiusa"},
+    "presa_in_carico": {"in_lavorazione", "risolta", "chiusa"},
+    "risolta": {"aperta", "chiusa"},
+    "chiusa": set(),
+}
 
 
 def create_report_record(data, author, upload):
@@ -36,7 +49,7 @@ def create_report_record(data, author, upload):
             "visibilita": "bozza"}
 
 
-def list_report_records(search="", neighborhood_id=None, category_id=None, state=None,
+def list_report_records(search="", neighborhood_id=None, category_ids=None, state=None,
                         author_id=None, viewer_id=None, order="recenti"):
     filters = ["s.Visibilita = 'pubblica'" if author_id is None else "s.Visibilita IN ('pubblica','bozza','nascosta','rimossa')",
                "(%s = '' OR s.Titolo LIKE %s OR s.Descrizione LIKE %s OR COALESCE(s.Indirizzo, '') LIKE %s)"]
@@ -47,9 +60,10 @@ def list_report_records(search="", neighborhood_id=None, category_id=None, state
     if state:
         filters.append("s.Stato = %s")
         params.append(state)
-    if category_id:
-        filters.append("EXISTS (SELECT 1 FROM SEGNALAZIONE_CATEGORIA sc WHERE sc.IdSegnalazione = s.IdSegnalazione AND sc.IdCategoria = %s)")
-        params.append(category_id)
+    if category_ids:
+        placeholders = ",".join(["%s"] * len(category_ids))
+        filters.append(f"EXISTS (SELECT 1 FROM SEGNALAZIONE_CATEGORIA sc WHERE sc.IdSegnalazione = s.IdSegnalazione AND sc.IdCategoria IN ({placeholders}))")
+        params.extend(category_ids)
     if author_id:
         filters.append("s.IdAutore = %s")
         params.append(author_id)
@@ -58,6 +72,9 @@ def list_report_records(search="", neighborhood_id=None, category_id=None, state
         COALESCE(s.Indirizzo, '') AS indirizzo,
         CONCAT(u.Nome, ' ', u.Cognome) AS autore, s.DataCreazione AS data_creazione,
         s.IdQuartiere AS quartiere_id, q.Nome AS quartiere,
+        (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', cat.IdCategoria, 'nome', cat.Nome))
+         FROM SEGNALAZIONE_CATEGORIA sc JOIN CATEGORIA cat ON cat.IdCategoria=sc.IdCategoria
+         WHERE sc.IdSegnalazione=s.IdSegnalazione) AS categorie_json,
         (SELECT COUNT(*) FROM SOSTEGNO so WHERE so.IdSegnalazione=s.IdSegnalazione AND so.DataRitiro IS NULL) AS sostegni,
         (%s IS NOT NULL AND EXISTS (SELECT 1 FROM SOSTEGNO own_so
            WHERE own_so.IdSegnalazione=s.IdSegnalazione AND own_so.IdUtente=%s
@@ -78,6 +95,8 @@ def list_report_records(search="", neighborhood_id=None, category_id=None, state
         rows = cursor.fetchall()
     for row in rows:
         row["data_creazione"] = row["data_creazione"].isoformat(timespec="seconds")
+        raw = row.pop("categorie_json", None)
+        row["categorie"] = sorted(json.loads(raw), key=lambda category: category["nome"]) if raw else []
     return rows
 
 
@@ -89,8 +108,9 @@ def get_report_record(report_id):
             s.Latitudine AS latitude, s.Longitudine AS longitude,
             s.IdAutore AS autore_id, q.Nome AS quartiere,
             CONCAT(u.Nome, ' ', u.Cognome) AS autore,
-            (SELECT GROUP_CONCAT(c.Nome SEPARATOR ', ') FROM SEGNALAZIONE_CATEGORIA sc
-             JOIN CATEGORIA c ON c.IdCategoria=sc.IdCategoria WHERE sc.IdSegnalazione=s.IdSegnalazione) AS categorie,
+            (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', c.IdCategoria, 'nome', c.Nome))
+             FROM SEGNALAZIONE_CATEGORIA sc JOIN CATEGORIA c ON c.IdCategoria=sc.IdCategoria
+             WHERE sc.IdSegnalazione=s.IdSegnalazione) AS categorie_json,
             (SELECT a.IdAllegato FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione
              ORDER BY a.IdAllegato LIMIT 1) AS allegato_id,
             (SELECT a.TipoMedia FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione
@@ -100,7 +120,11 @@ def get_report_record(report_id):
             FROM SEGNALAZIONE s JOIN UTENTE u ON u.IdUtente=s.IdAutore
             LEFT JOIN QUARTIERE q ON q.IdQuartiere=s.IdQuartiere
             WHERE s.IdSegnalazione=%s""", (report_id,))
-        return cursor.fetchone()
+        row = cursor.fetchone()
+    if row:
+        raw = row.pop("categorie_json", None)
+        row["categorie"] = sorted(json.loads(raw), key=lambda category: category["nome"]) if raw else []
+    return row
 
 
 def report_comments(report_id):
@@ -236,15 +260,35 @@ def list_moderation_reports(cursor_id=None, visibility="bozza", limit=25):
     return {"items": rows, "next_cursor": rows[-1]["id"] if more else None}
 
 
-def list_moderation_users(cursor_id=None, limit=25):
+def list_moderation_users(cursor_id=None, limit=25, search=""):
+    # Prefisso, non wildcard arbitraria: la ricerca rimane utile su liste grandi.
+    escaped = search.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
     with database_cursor() as cursor:
         cursor.execute("""SELECT u.IdUtente AS id, u.Nome AS nome, u.Cognome AS cognome,
-            u.StatoAccount AS stato FROM UTENTE u LEFT JOIN MODERATORE m ON m.IdUtente=u.IdUtente
+            u.Email AS email, u.StatoAccount AS stato,
+            b.DataFinePrevista AS blocco_fine,
+            CASE WHEN u.StatoAccount='attivo' THEN 'attivo'
+                 WHEN b.IdBlocco IS NULL THEN 'bloccato_senza_dettagli'
+                 WHEN b.DataFinePrevista IS NULL THEN 'permanente'
+                 WHEN b.DataFinePrevista <= CURRENT_TIMESTAMP THEN 'scaduto'
+                 ELSE 'temporaneo' END AS tipo_blocco
+            FROM UTENTE u LEFT JOIN MODERATORE m ON m.IdUtente=u.IdUtente
+            LEFT JOIN BLOCCO b ON b.IdBlocco=(
+                SELECT latest.IdBlocco FROM BLOCCO latest
+                WHERE latest.IdUtenteBloccato=u.IdUtente AND latest.DataRevoca IS NULL
+                ORDER BY latest.IdBlocco DESC LIMIT 1)
             WHERE u.StatoAccount IN ('attivo', 'bloccato') AND m.IdUtente IS NULL
               AND (%s IS NULL OR u.IdUtente < %s)
-            ORDER BY u.IdUtente DESC LIMIT %s""", (cursor_id, cursor_id, limit + 1))
+              AND (%s = '' OR u.Email LIKE %s ESCAPE '!' OR u.Nome LIKE %s ESCAPE '!'
+                   OR u.Cognome LIKE %s ESCAPE '!' OR u.IdUtente=%s)
+            ORDER BY u.IdUtente DESC LIMIT %s""",
+            (cursor_id, cursor_id, search, escaped, escaped, escaped,
+             int(search) if search.isdigit() else 0, limit + 1))
         rows = cursor.fetchall()
     more = len(rows) > limit
+    for row in rows[:limit]:
+        if row["blocco_fine"] is not None:
+            row["blocco_fine"] = row["blocco_fine"].isoformat(timespec="seconds")
     return {"items": rows[:limit], "next_cursor": rows[limit - 1]["id"] if more else None}
 
 
@@ -280,8 +324,46 @@ def block_user(user_id, moderator_id, reason, days):
     return True
 
 
+def permanently_ban_user(user_id, moderator_id, reason):
+    """Nessuna DELETE: conserva FK e audit e revoca l'accesso senza scadenza."""
+    if user_id == moderator_id:
+        return False
+    with database_cursor(write=True) as cursor:
+        cursor.execute("""SELECT u.StatoAccount FROM UTENTE u
+            WHERE u.IdUtente=%s AND u.StatoAccount IN ('attivo', 'bloccato')
+            AND NOT EXISTS (SELECT 1 FROM MODERATORE WHERE IdUtente=u.IdUtente)
+            FOR UPDATE""", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return False
+        cursor.execute("""SELECT IdBlocco, DataFinePrevista FROM BLOCCO
+            WHERE IdUtenteBloccato=%s AND DataRevoca IS NULL
+            ORDER BY IdBlocco DESC LIMIT 1 FOR UPDATE""", (user_id,))
+        previous = cursor.fetchone()
+        if previous and previous["DataFinePrevista"] is None:
+            return False
+        if previous:
+            # Conserva durata, autore e motivo del blocco precedente nello storico.
+            cursor.execute("""UPDATE BLOCCO SET IdModeratoreRevoca=%s,
+                DataRevoca=CURRENT_TIMESTAMP, MotivoRevoca='Sostituito da ban permanente'
+                WHERE IdBlocco=%s""", (moderator_id, previous["IdBlocco"]))
+        cursor.execute("""INSERT INTO BLOCCO
+            (IdUtenteBloccato, IdModeratore, Motivazione, DataFinePrevista)
+            VALUES (%s, %s, %s, NULL)""", (user_id, moderator_id, reason))
+        block_id = cursor.lastrowid
+        cursor.execute("UPDATE UTENTE SET StatoAccount='bloccato' WHERE IdUtente=%s", (user_id,))
+        cursor.execute("""INSERT INTO EVENTO_LOG
+            (IdEsecutore, TipoAzione, Esito, Dettagli, IdUtenteBersaglio, IdBlocco)
+            VALUES (%s, 'ban_permanente', 'successo', %s, %s, %s)""",
+            (moderator_id, reason, user_id, block_id))
+    return True
+
+
 def unblock_user(user_id, moderator_id, reason):
     with database_cursor(write=True) as cursor:
+        cursor.execute("SELECT IdUtente FROM UTENTE WHERE IdUtente=%s FOR UPDATE", (user_id,))
+        if not cursor.fetchone():
+            return False
         cursor.execute("""SELECT IdBlocco FROM BLOCCO
             WHERE IdUtenteBloccato=%s AND DataRevoca IS NULL
             ORDER BY DataInizio DESC LIMIT 1 FOR UPDATE""", (user_id,))
@@ -300,15 +382,6 @@ def unblock_user(user_id, moderator_id, reason):
 
 
 def change_report_state(report_id, user_id, new_state, reason=None):
-    transitions = {
-        "nuova": {"aperta", "in_valutazione", "chiusa"},
-        "aperta": {"in_valutazione", "in_lavorazione", "presa_in_carico", "risolta", "chiusa"},
-        "in_valutazione": {"in_lavorazione", "presa_in_carico", "risolta", "chiusa"},
-        "in_lavorazione": {"presa_in_carico", "risolta", "chiusa"},
-        "presa_in_carico": {"in_lavorazione", "risolta", "chiusa"},
-        "risolta": {"aperta", "chiusa"},
-        "chiusa": set(),
-    }
     with database_cursor(write=True) as cursor:
         cursor.execute("SELECT Stato FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
         report = cursor.fetchone()
@@ -317,7 +390,7 @@ def change_report_state(report_id, user_id, new_state, reason=None):
         cursor.execute("SELECT 1 FROM STATO_SEGNALAZIONE WHERE Codice=%s", (new_state,))
         if not cursor.fetchone():
             return None
-        if new_state not in transitions.get(report["Stato"], set()):
+        if new_state not in STATE_TRANSITIONS.get(report["Stato"], set()):
             return None
         cursor.execute("UPDATE SEGNALAZIONE SET Stato=%s WHERE IdSegnalazione=%s", (new_state, report_id))
         cursor.execute("""INSERT INTO STORICO_STATO

@@ -18,9 +18,17 @@ def create_report(data, author, uploaded_file):
     neighborhood = data.get("quartiere_id")
     try:
         neighborhood = int(neighborhood)
-        category_id = int(data.get("categoria_id"))
     except (TypeError, ValueError):
-        raise ReportValidationError("Quartiere o categoria non validi.")
+        raise ReportValidationError("Quartiere non valido.")
+    raw_categories = data.get("categoria_ids") or ([data.get("categoria_id")] if data.get("categoria_id") else [])
+    if not isinstance(raw_categories, list) or not 1 <= len(raw_categories) <= 5:
+        raise ReportValidationError("Seleziona da una a cinque categorie.")
+    try:
+        category_ids = [int(category_id) for category_id in raw_categories]
+    except (TypeError, ValueError):
+        raise ReportValidationError("Categorie non valide.")
+    if any(category_id <= 0 for category_id in category_ids) or len(set(category_ids)) != len(category_ids):
+        raise ReportValidationError("Le categorie devono essere valide e distinte.")
     if report_type not in {"segnalazione", "proposta"}:
         raise ReportValidationError("Tipo non valido.")
     if not 3 <= len(title) <= 200:
@@ -29,8 +37,8 @@ def create_report(data, author, uploaded_file):
         raise ReportValidationError("La descrizione deve contenere da 10 a 5000 caratteri.")
     if not valid_neighborhood(neighborhood):
         raise ReportValidationError("Seleziona un quartiere attivo.")
-    if not valid_categories([category_id]):
-        raise ReportValidationError("Seleziona una categoria valida.")
+    if not valid_categories(category_ids):
+        raise ReportValidationError("Seleziona solo categorie attive.")
     address = (data.get("indirizzo") or "").strip()
     if not 3 <= len(address) <= 255:
         raise ReportValidationError("Seleziona un luogo e indica un indirizzo (3–255 caratteri).")
@@ -45,7 +53,7 @@ def create_report(data, author, uploaded_file):
     try:
         return create_report_record({
             "tipo": report_type, "titolo": title, "descrizione": description,
-            "indirizzo": address, "quartiere_id": neighborhood, "categorie": [category_id],
+            "indirizzo": address, "quartiere_id": neighborhood, "categorie": category_ids,
             "latitude": latitude.quantize(Decimal("0.000001")),
             "longitude": longitude.quantize(Decimal("0.000001")),
         }, author, upload)

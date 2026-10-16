@@ -6,7 +6,8 @@ from mysql.connector import IntegrityError
 from backend.repositories.reports import (
     add_comment, attachment_path, block_user, change_report_state, get_report_record,
     list_moderation_reports, list_moderation_users, list_report_records,
-    moderate_comment, moderate_report, moderate_reports, report_comments,
+    moderate_comment, moderate_report, moderate_reports, permanently_ban_user,
+    report_comments, STATE_TRANSITIONS,
     set_support, unblock_user, user_supports, withdraw_report,
 )
 from backend.services.reports import ReportValidationError, create_report
@@ -39,9 +40,14 @@ def get_reports():
     order = request.args.get("ordina", "recenti")
     if order not in {"recenti", "sostegni"}:
         return jsonify(error="Ordinamento non valido."), 400
+    raw_categories = request.args.getlist("categoria")
+    if (len(raw_categories) > 10 or any(not value.isdigit() or int(value) < 1 for value in raw_categories)
+            or len(set(raw_categories)) != len(raw_categories)):
+        return jsonify(error="Seleziona fino a dieci categorie distinte."), 400
+    categories = [int(value) for value in raw_categories]
     rows = list_report_records(
         request.args.get("q", "").strip()[:200],
-        request.args.get("quartiere", type=int), request.args.get("categoria", type=int),
+        request.args.get("quartiere", type=int), categories or None,
         request.args.get("stato", "").strip()[:30] or None,
         g.user["id"] if request.args.get("mie") == "1" and g.user else None,
         g.user["id"] if g.user else None,
@@ -56,6 +62,8 @@ def post_report():
     if not request.mimetype or not request.mimetype.startswith("multipart/form-data"):
         return jsonify(error="Invia il form multipart con un allegato."), 400
     data = request.form.to_dict()
+    if "categoria_ids" in request.form:
+        data["categoria_ids"] = request.form.getlist("categoria_ids")
     try:
         report = create_report(data, author=g.user, uploaded_file=request.files.get("allegato"))
     except (ReportValidationError, UploadError) as error:
@@ -144,7 +152,7 @@ def get_support(report_id):
 
 @reports.get("/api/stati")
 def get_states():
-    return jsonify([
+    rows = [
         {"codice": "nuova", "etichetta": "Nuova"},
         {"codice": "aperta", "etichetta": "Aperta"},
         {"codice": "in_valutazione", "etichetta": "In valutazione"},
@@ -152,7 +160,10 @@ def get_states():
         {"codice": "presa_in_carico", "etichetta": "Presa in carico"},
         {"codice": "risolta", "etichetta": "Risolta"},
         {"codice": "chiusa", "etichetta": "Chiusa"},
-    ])
+    ]
+    for row in rows:
+        row["prossimi"] = sorted(STATE_TRANSITIONS.get(row["codice"], set()))
+    return jsonify(rows)
 
 
 @reports.patch("/api/segnalazioni/<int:report_id>/stato")
@@ -233,6 +244,18 @@ def moderator_block_user(user_id):
     return jsonify(ok=True)
 
 
+@reports.post("/api/moderazione/utenti/<int:user_id>/ban-permanente")
+@role_required("moderatore")
+def moderator_permanent_ban(user_id):
+    payload = request.get_json(silent=True)
+    reason = payload.get("motivazione", "").strip() if isinstance(payload, dict) and isinstance(payload.get("motivazione"), str) else ""
+    if not 1 <= len(reason) <= 3000:
+        return jsonify(error="Inserisci una motivazione (massimo 3000 caratteri)."), 400
+    if not permanently_ban_user(user_id, g.user["id"], reason):
+        return jsonify(error="Utente non disponibile o già bloccato permanentemente."), 409
+    return jsonify(ok=True)
+
+
 @reports.post("/api/moderazione/utenti/<int:user_id>/sblocco")
 @role_required("moderatore")
 def moderator_unblock_user(user_id):
@@ -250,9 +273,10 @@ def moderator_unblock_user(user_id):
 @role_required("moderatore")
 def moderator_users():
     cursor = request.args.get("cursor", type=int)
-    if cursor is not None and cursor < 1:
-        return jsonify(error="Paginazione non valida."), 400
-    return jsonify(list_moderation_users(cursor))
+    search = request.args.get("q", "").strip()
+    if cursor is not None and cursor < 1 or len(search) > 100:
+        return jsonify(error="Ricerca o paginazione non valida."), 400
+    return jsonify(list_moderation_users(cursor, search=search))
 
 
 @reports.get("/api/allegati/<int:attachment_id>")
