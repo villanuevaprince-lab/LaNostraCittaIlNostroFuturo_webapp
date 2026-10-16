@@ -327,6 +327,15 @@ nav a:hover, .report-card a:hover, .moderation-row a:hover { text-decoration: un
 .category-fieldset { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 5px; }
 .category-fieldset legend { padding-inline: 5px; font-weight: 700; }
 .category-fieldset .hint { margin: 8px 0 0; }
+.category-dropdown { position: relative; }
+.category-dropdown summary { list-style: none; cursor: pointer; min-height: 47px; padding: 11px 34px 11px 12px; border: 1px solid var(--border); border-radius: 5px; background: #fff; font-weight: 400; }
+.category-dropdown summary::-webkit-details-marker { display: none; }
+.category-dropdown summary::after { content: "⌄"; position: absolute; right: 13px; top: 8px; font-size: 1.25rem; }
+.category-dropdown summary:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.category-dropdown-panel { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; width: max(100%, 250px); max-width: min(360px, 90vw); max-height: 310px; overflow-y: auto; padding: 13px; border: 1px solid var(--border); border-radius: 5px; background: #fff; box-shadow: 0 8px 22px rgba(17, 42, 55, .12); }
+.category-dropdown-panel .hint { margin-bottom: 10px; }
+.category-dropdown-panel .tag-options { display: grid; gap: 6px; }
+.category-dropdown-panel .tag-option { width: 100%; }
 .tag-options, .tag-list { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .tag-list { margin: 12px 0; }
 .tag-option { display: inline-flex; position: relative; align-items: center; cursor: pointer; font-size: .88rem; font-weight: 550; }

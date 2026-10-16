@@ -197,8 +197,10 @@ rete Aiven.
 4. Apri `/reports/new`, cerca un indirizzo milanese, scegli il risultato e
    trascina il pin; verifica che indirizzo, latitudine e longitudine siano
    compilati prima dell'invio.
-5. Controlla `/dashboard`: il contenuto deve risultare **In revisione**.
-6. Accedi con il moderatore e apri `/moderazione`; approva il contenuto.
+5. Controlla `/dashboard`: il contenuto deve risultare **Pubblicata**.
+6. Accedi con il moderatore e apri `/moderazione`; rimuovi il contenuto,
+   verifica la vista **Eliminati** e reinseriscilo. La dashboard dell'autore
+   deve mostrare **Rimossa dai moderatori** prima del reinserimento.
 7. Torna alla bacheca, apri la scheda dettaglio e verifica la mappa, i commenti
    e il sostegno.
 8. Dalla dashboard dell'autore prova il ritiro logico della segnalazione.
@@ -239,8 +241,10 @@ regole di accesso del servizio Aiven. Non provare a disattivare TLS.
 
 ### Le nuove segnalazioni non compaiono nella home
 
-È normale prima dell'approvazione: controlla la dashboard dell'autore e la coda
-di moderazione. Solo un moderatore può impostare la visibilità `pubblica`.
+Controlla `/dashboard` e `/api/health`. Se la dashboard mostra il contenuto
+come pubblicato ma la home non lo mostra, verifica i filtri di ricerca e la
+visibilità nel database. I nuovi contenuti passano a `pubblica` nella stessa
+transazione che salva l'allegato.
 
 ### La mappa non trova un indirizzo
 

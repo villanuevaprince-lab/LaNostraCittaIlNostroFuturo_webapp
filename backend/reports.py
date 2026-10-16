@@ -56,6 +56,19 @@ def get_reports():
     return jsonify(rows)
 
 
+@reports.get("/api/me/segnalazioni")
+@login_required
+def my_reports():
+    view = request.args.get("vista", "tutte")
+    cursor = request.args.get("cursor", type=int)
+    if view not in {"tutte", "pubblica", "bozza", "nascosta", "rimossa_moderazione", "rimossa_autore"} or (cursor is not None and cursor < 1):
+        return jsonify(error="Vista o paginazione non valide."), 400
+    rows = list_report_records(author_id=g.user["id"], viewer_id=g.user["id"],
+                               visibility_filter=view, cursor_id=cursor, limit=26)
+    page = rows[:25]
+    return jsonify(items=page, next_cursor=page[-1]["id"] if len(rows) > 25 else None)
+
+
 @reports.post("/api/segnalazioni")
 @login_required
 def post_report():
@@ -72,7 +85,7 @@ def post_report():
         if error.errno == 1062:
             return jsonify(error="Operazione duplicata."), 409
         raise
-    flash("Contenuto inviato. Lo troverai nella tua area personale mentre attende la revisione.", "success")
+    flash("Contenuto pubblicato. Lo trovi nella tua area personale e nella bacheca.", "success")
     return jsonify(ok=True, report=report, redirect="/dashboard"), 201
 
 
@@ -199,10 +212,10 @@ def moderate_report_visibility(report_id):
 @reports.get("/api/moderazione/coda")
 @role_required("moderatore")
 def moderation_queue():
-    visibility = request.args.get("visibilita", "bozza")
+    visibility = request.args.get("visibilita", "pubblica")
     cursor = request.args.get("cursor", type=int)
     limit = request.args.get("limit", 25, type=int)
-    if visibility not in {"bozza", "pubblica", "nascosta"} or not 1 <= limit <= 50 or cursor is not None and cursor < 1:
+    if visibility not in {"bozza", "pubblica", "nascosta", "rimossa"} or not 1 <= limit <= 50 or cursor is not None and cursor < 1:
         return jsonify(error="Filtro o paginazione non validi."), 400
     return jsonify(list_moderation_reports(cursor, visibility, limit))
 

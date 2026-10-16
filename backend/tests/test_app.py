@@ -34,6 +34,7 @@ def test_homepage_has_filters_and_separate_creation_page(client):
     assert 'href="/reports/new"' in html
     assert 'id="report-form"' not in html
     assert 'id="filter-categories"' in html and 'id="sort-reports"' in html
+    assert 'id="category-filter-summary"' in html and 'class="category-dropdown"' in html
     assert "Modalità demo" not in html
 
 
@@ -52,7 +53,10 @@ def test_guest_is_sent_to_login(client, path):
 
 
 def test_dashboard_and_form_after_login(client, logged_in):
-    assert client.get("/dashboard").status_code == 200
+    dashboard = client.get("/dashboard")
+    assert dashboard.status_code == 200
+    assert 'id="dashboard-filter"' in dashboard.get_data(as_text=True)
+    assert 'value="rimossa_moderazione"' in dashboard.get_data(as_text=True)
     assert client.get("/profilo").status_code == 200
     html = client.get("/reports/new").get_data(as_text=True)
     assert "Marco Rossi" in html and 'id="category-options"' in html
@@ -71,6 +75,20 @@ def test_report_list_queries_repository(client, monkeypatch, logged_in):
     assert query.call_args.args[-2:] == (101, "sostegni")
 
 
+def test_dashboard_reports_are_filtered_and_paginated_on_server(client, logged_in, monkeypatch):
+    from backend import reports
+    query = Mock(return_value=[{"id": index} for index in range(50, 24, -1)])
+    monkeypatch.setattr(reports, "list_report_records", query)
+    page = client.get("/api/me/segnalazioni?vista=rimossa_moderazione&cursor=51")
+    assert page.status_code == 200
+    assert len(page.get_json()["items"]) == 25
+    assert page.get_json()["next_cursor"] == 26
+    assert query.call_args.kwargs == {"author_id": 101, "viewer_id": 101,
+        "visibility_filter": "rimossa_moderazione", "cursor_id": 51, "limit": 26}
+    assert client.get("/api/me/segnalazioni?vista=inesistente").status_code == 400
+    assert client.get("/api/me/segnalazioni?cursor=-1").status_code == 400
+
+
 def test_multi_category_filter_uses_bound_ids(client, monkeypatch):
     from backend import reports
     query = Mock(return_value=[])
@@ -85,6 +103,7 @@ def test_guest_cannot_publish(client, report_data):
     response = client.post("/api/segnalazioni", data=report_data,
                            headers={"X-CSRFToken": csrf_token(client)})
     assert response.status_code == 401
+    assert client.get("/api/me/segnalazioni").status_code == 401
 
 
 def test_report_requires_attachment(client, logged_in, report_data, monkeypatch):
@@ -111,7 +130,7 @@ def test_report_publication_passes_session_author(client, logged_in, report_data
     data, author, upload = insert.call_args.args
     assert author["id"] == 101 and str(data["latitude"]) == "45.464200" and str(data["longitude"]) == "9.190000"
     assert upload["path"].is_file()
-    assert "Contenuto inviato." in client.get("/").get_data(as_text=True)
+    assert "Contenuto pubblicato." in client.get("/").get_data(as_text=True)
 
 
 def test_report_saves_multiple_distinct_categories(client, logged_in, report_data, monkeypatch):
@@ -178,6 +197,17 @@ def test_batch_moderation_checks_role_and_limit(client, logged_in, monkeypatch):
     assert client.post(path, json={"ids": [1], "azione": "approva"},
                        headers={"X-CSRFToken": csrf_token(client)}).status_code == 200
     assert action.call_args.args == ([1], 101, "pubblica")
+
+
+def test_deleted_moderation_view_is_role_protected(client, logged_in, monkeypatch):
+    from backend import reports, users
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": False)
+    assert client.get("/api/moderazione/coda?visibilita=rimossa").status_code == 403
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": True)
+    queue = Mock(return_value={"items": [], "next_cursor": None})
+    monkeypatch.setattr(reports, "list_moderation_reports", queue)
+    assert client.get("/api/moderazione/coda?visibilita=rimossa").status_code == 200
+    assert queue.call_args.args == (None, "rimossa", 25)
 
 
 def test_comments_and_support_use_repository(client, logged_in, monkeypatch):

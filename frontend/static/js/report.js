@@ -131,7 +131,7 @@ form.addEventListener("submit", async (event) => {
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   form.setAttribute("aria-busy", "true");
-  status.textContent = "Invio per revisione in corso…";
+  status.textContent = "Pubblicazione in corso…";
   try {
     const response = await fetch(form.action, {
       method: "POST", credentials: "same-origin",

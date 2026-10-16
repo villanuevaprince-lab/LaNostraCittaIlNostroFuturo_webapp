@@ -30,19 +30,21 @@ async function requestJSON(url, method = "GET", payload) {
 function selectionChanged() {
   document.querySelector("#selected-count").textContent = `${selected.size} selezionati`;
   for (const id of ["bulk-approve", "bulk-reject"]) document.getElementById(id).disabled = !selected.size;
-  const visible = [...reportRoot.querySelectorAll('input[type="checkbox"]')];
+  const visible = [...reportRoot.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
   document.querySelector("#select-all-reports").textContent =
     visible.length && visible.every((item) => item.checked) ? "Deseleziona le visibili" : "Seleziona tutte le visibili";
+  document.querySelector("#select-all-reports").disabled = !visible.length;
+  document.querySelector("#bulk-approve").textContent = filter.value === "rimossa" ? "Reinserisci selezionati" : "Approva selezionati";
 }
 
 async function action(ids, name) {
-  if (name === "rifiuta" && !window.confirm(`Rifiutare ${ids.length} contenuti? Non saranno più pubblicabili.`)) return;
+  if (name === "rifiuta" && !window.confirm(`Rimuovere ${ids.length} contenuti dalla bacheca?`)) return;
   try {
     const result = await requestJSON("/api/moderazione/segnalazioni/azioni", "POST", { ids, azione: name });
-    status.textContent = `${result.modificate} aggiornati, ${result.invariate} invariati, ${result.missing.length} non trovati.`;
     for (const id of ids) selected.delete(id);
     selectionChanged();
     await loadReports(true);
+    status.textContent = `${result.modificate} aggiornati, ${result.invariate} invariati, ${result.missing.length} non trovati.`;
   } catch (error) { status.textContent = error.message; }
 }
 
@@ -84,6 +86,7 @@ function renderReport(report, states) {
   const row = document.createElement("article"); row.className = "moderation-row";
   row.dataset.reportId = report.id;
   const check = document.createElement("input"); check.type = "checkbox";
+  check.disabled = report.visibilita === "rimossa" && Boolean(report.ritirata_autore);
   check.setAttribute("aria-label", `Seleziona ${report.titolo}`);
   check.addEventListener("change", () => {
     if (check.checked && selected.size >= 50) {
@@ -99,15 +102,20 @@ function renderReport(report, states) {
   const link = document.createElement("a"); link.href = `/reports/${report.id}`; link.textContent = report.titolo;
   heading.append(link);
   const meta = document.createElement("p"); meta.className = "report-meta";
-  meta.textContent = `${report.tipo} · ${report.autore} · ${report.data_creazione.slice(0, 10)} · ${report.visibilita}`;
+  const visibilityLabel = report.visibilita === "rimossa"
+    ? report.ritirata_autore ? "ritirata dall'autore" : "rimossa dai moderatori"
+    : report.visibilita;
+  meta.textContent = `${report.tipo} · ${report.autore} · ${report.data_creazione.slice(0, 10)} · ${visibilityLabel}`;
   body.append(heading, meta);
   const controls = document.createElement("div"); controls.className = "toolbar";
-  controls.append(
-    button("Approva", "button", () => action([report.id], "approva")),
-    button("Rifiuta", "button button-danger", () => action([report.id], "rifiuta")),
-    button("Nascondi", "button button-secondary", () => action([report.id], "nascondi")),
-    button("Blocca autore", "button button-secondary", () => blockUser(report.autore_id, report.autore)),
-  );
+  if (report.visibilita !== "pubblica" && !check.disabled) controls.append(button(
+    report.visibilita === "rimossa" ? "Reinserisci" : "Approva", "button",
+    () => action([report.id], "approva")));
+  if (report.visibilita !== "rimossa") controls.append(button(
+    "Rimuovi", "button button-danger", () => action([report.id], "rifiuta")));
+  if (report.visibilita === "pubblica") controls.append(button(
+    "Nascondi", "button button-secondary", () => action([report.id], "nascondi")));
+  controls.append(button("Blocca autore", "button button-secondary", () => blockUser(report.autore_id, report.autore)));
   const stateDefinition = states.find((item) => item.codice === report.stato);
   const stateLabel = document.createElement("label"); stateLabel.className = "state-control";
   stateLabel.textContent = "Stato";
@@ -226,7 +234,7 @@ document.querySelector("#bulk-approve").addEventListener("click", () => action([
 document.querySelector("#bulk-reject").addEventListener("click", () => action([...selected], "rifiuta"));
 document.querySelector("#moderation-next").addEventListener("click", () => loadReports());
 document.querySelector("#select-all-reports").addEventListener("click", () => {
-  const boxes = [...reportRoot.querySelectorAll('input[type="checkbox"]')];
+  const boxes = [...reportRoot.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
   const shouldSelect = boxes.some((box) => !box.checked);
   for (const box of boxes) {
     const id = Number(box.closest("article").dataset.reportId);

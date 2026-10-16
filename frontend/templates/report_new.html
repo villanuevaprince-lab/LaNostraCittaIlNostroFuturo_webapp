@@ -11,9 +11,9 @@
     <div>
       <p class="eyebrow">Il tuo contributo</p>
       <h1 id="report-title" class="page-title">Nuova segnalazione</h1>
-      <p>Descrivi il problema o la proposta, scegli il luogo e allega una prova. Potrai seguirne la revisione nella tua area personale.</p>
+      <p>Descrivi il problema o la proposta, scegli il luogo e allega una prova. Potrai seguirla nella tua area personale.</p>
       <p>Pubblicherai come <strong>{{ user.nome }} {{ user.cognome }}</strong>.</p>
-      <p class="mode-note">Il contenuto sarà pubblico solo dopo la revisione. Non caricare documenti con dati personali.</p>
+      <p class="mode-note">Il contenuto sarà pubblico subito dopo l'invio. Non caricare documenti con dati personali.</p>
       <noscript><p class="mode-note">Attiva JavaScript per inviare il modulo.</p></noscript>
     </div>
     <form id="report-form" method="post" action="{{ url_for('reports.post_report') }}"
@@ -61,7 +61,7 @@
         <input name="allegato" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
       </label>
       <small>Massimo 20 MB. Formati: JPEG, PNG, WebP, MP4 o WebM.</small>
-      <button class="button" type="submit">Invia per revisione</button>
+      <button class="button" type="submit">Pubblica contenuto</button>
       <p data-form-status class="status" role="status" aria-live="polite"></p>
       <a class="back-link" href="/">Annulla e torna alla home</a>
     </form>

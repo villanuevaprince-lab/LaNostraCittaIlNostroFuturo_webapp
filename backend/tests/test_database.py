@@ -107,8 +107,10 @@ def test_publication_follows_attachment_insert_in_one_transaction(fake_mysql):
     assert "'bozza'" in queries[0]
     assert cursor.execute.call_args_list[0].args[1][0] == 9
     assert "INSERT INTO ALLEGATO" in queries[1]
-    assert "Visibilita='pubblica'" not in queries[-1]
-    assert result["visibilita"] == "bozza"
+    attachment_index = next(index for index, sql in enumerate(queries) if "INSERT INTO ALLEGATO" in sql)
+    publish_index = next(index for index, sql in enumerate(queries) if "SET Visibilita='pubblica'" in sql)
+    assert publish_index > attachment_index
+    assert result["visibilita"] == "pubblica"
     assert result["id"] == 42
     connection.commit.assert_called_once()
 
@@ -145,6 +147,20 @@ def test_multiple_categories_are_filtered_and_returned_as_tags(fake_mysql):
     assert [category["nome"] for category in rows[0]["categorie"]] == ["Ambiente", "Mobilità"]
     cursor.fetchone.return_value = {"categorie_json": '[{"id":2,"nome":"Ambiente"}]'}
     assert get_report_record(3)["categorie"] == [{"id": 2, "nome": "Ambiente"}]
+
+
+def test_dashboard_removed_filter_separates_moderator_and_author(fake_mysql):
+    _, cursor = fake_mysql
+    cursor.fetchall.return_value = []
+    list_report_records(author_id=7, viewer_id=7,
+        visibility_filter="rimossa_moderazione", cursor_id=42, limit=26)
+    sql, params = cursor.execute.call_args.args
+    assert "NOT EXISTS (SELECT 1 FROM EVENTO_LOG r" in sql
+    assert "s.IdSegnalazione < %s" in sql
+    assert "ORDER BY s.IdSegnalazione DESC LIMIT %s" in sql
+    assert params[-3:] == (7, 42, 26)
+    list_report_records(author_id=7, viewer_id=7, visibility_filter="rimossa_autore", limit=26)
+    assert "EXISTS (SELECT 1 FROM EVENTO_LOG r" in cursor.execute.call_args.args[0]
 
 
 def test_user_search_is_parameterized_and_includes_block_type(fake_mysql):
@@ -202,6 +218,25 @@ def test_bulk_moderation_uses_stable_lock_order_and_audit(fake_mysql):
     assert locks == [1, 2]
     assert any("EVENTO_LOG" in call.args[0] for call in cursor.execute.call_args_list)
     connection.commit.assert_called_once()
+
+
+def test_moderator_can_restore_removed_report(fake_mysql):
+    connection, cursor = fake_mysql
+    cursor.fetchone.side_effect = [{"Visibilita": "rimossa"}, None]
+    result = moderate_reports([12], 9, "pubblica")
+    assert result == {"modificate": 1, "invariate": 0, "missing": []}
+    queries = [call.args[0] for call in cursor.execute.call_args_list]
+    assert "ritiro_segnalazione" in queries[1]
+    assert any("UPDATE SEGNALAZIONE SET Visibilita=%s" in sql for sql in queries)
+    assert any("moderazione_segnalazione" in sql for sql in queries)
+    connection.commit.assert_called_once()
+
+
+def test_moderator_cannot_restore_author_withdrawal(fake_mysql):
+    _, cursor = fake_mysql
+    cursor.fetchone.side_effect = [{"Visibilita": "rimossa"}, {"1": 1}]
+    assert moderate_reports([12], 9, "pubblica") == {"modificate": 0, "invariate": 1, "missing": []}
+    assert not any("UPDATE SEGNALAZIONE" in call.args[0] for call in cursor.execute.call_args_list)
 
 
 def test_withdraw_cannot_touch_other_authors_report(fake_mysql):

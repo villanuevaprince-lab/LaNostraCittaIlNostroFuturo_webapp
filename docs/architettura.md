@@ -58,15 +58,17 @@ interne previste.
 
 ## Segnalazioni, allegati e database
 
-Il service valida i campi, il quartiere e la categoria attiva, verifica
-l'allegato senza estrarre coordinate, poi il repository inserisce segnalazione, allegato, categoria,
-storico iniziale ed evento di audit nella stessa transazione MySQL. Se il
+Il service valida i campi, il quartiere e le categorie attive, verifica
+l'allegato senza estrarre coordinate, poi il repository inserisce segnalazione,
+allegato, categorie, pubblicazione, storico ed evento di audit nella stessa
+transazione MySQL. Se il
 salvataggio DB fallisce, il file viene rimosso. Gli upload hanno limite 20 MB,
 nomi casuali, verifica della firma e, per le immagini, decodifica e riscrittura
 Pillow per rimuovere metadati EXIF. Le nuove coordinate sono validate server-side
 in un perimetro di Milano; i dati storici possono avere coordinate NULL.
-La visibilità iniziale è `bozza`: il moderatore pubblica o rifiuta dopo aver
-ispezionato il contenuto. Il ritiro da parte dell'autore è logico.
+La segnalazione viene inserita inizialmente come `bozza`, poi passa a `pubblica`
+dopo l'allegato e prima del commit. I moderatori possono rimuoverla e
+reinserirla; il ritiro da parte dell'autore è logico e definitivo.
 
 Sostegni, commenti, stato e moderazione usano endpoint autenticati dove
 necessario; cambi di stato, blocchi e azioni moderate scrivono il log previsto

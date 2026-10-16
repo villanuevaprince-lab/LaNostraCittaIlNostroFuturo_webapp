@@ -36,21 +36,23 @@ def create_report_record(data, author, upload):
             cursor.execute("""INSERT INTO SEGNALAZIONE_CATEGORIA
                 (IdSegnalazione, IdCategoria, Origine) VALUES (%s, %s, 'utente')""",
                 (report_id, category_id))
+        # Il trigger di pubblicazione richiede che l'allegato sia già presente.
+        cursor.execute("UPDATE SEGNALAZIONE SET Visibilita='pubblica' WHERE IdSegnalazione=%s", (report_id,))
         cursor.execute("""INSERT INTO STORICO_STATO
             (IdSegnalazione, StatoPrecedente, StatoSuccessivo, IdAutoreModifica, Motivazione)
-            VALUES (%s, NULL, %s, %s, 'Invio per revisione')""",
+            VALUES (%s, NULL, %s, %s, 'Pubblicazione del contenuto')""",
             (report_id, initial_state, author["id"]))
         cursor.execute("""INSERT INTO EVENTO_LOG
             (IdEsecutore, TipoAzione, Esito, Dettagli, IdSegnalazione)
-            VALUES (%s, 'creazione_segnalazione', 'successo', 'Contenuto inviato per revisione con allegato', %s)""",
+            VALUES (%s, 'creazione_segnalazione', 'successo', 'Contenuto pubblicato con allegato', %s)""",
             (author["id"], report_id))
-        # Bozza qui significa inviata alla coda, non modificabile dall'autore.
     return {"id": report_id, "titolo": data["titolo"], "stato": initial_state,
-            "visibilita": "bozza"}
+            "visibilita": "pubblica"}
 
 
 def list_report_records(search="", neighborhood_id=None, category_ids=None, state=None,
-                        author_id=None, viewer_id=None, order="recenti"):
+                        author_id=None, viewer_id=None, order="recenti",
+                        visibility_filter=None, cursor_id=None, limit=100):
     filters = ["s.Visibilita = 'pubblica'" if author_id is None else "s.Visibilita IN ('pubblica','bozza','nascosta','rimossa')",
                "(%s = '' OR s.Titolo LIKE %s OR s.Descrizione LIKE %s OR COALESCE(s.Indirizzo, '') LIKE %s)"]
     params = [search, f"%{search}%", f"%{search}%", f"%{search}%"]
@@ -67,11 +69,23 @@ def list_report_records(search="", neighborhood_id=None, category_ids=None, stat
     if author_id:
         filters.append("s.IdAutore = %s")
         params.append(author_id)
+        if visibility_filter in {"pubblica", "bozza", "nascosta"}:
+            filters.append("s.Visibilita = %s")
+            params.append(visibility_filter)
+        elif visibility_filter in {"rimossa_moderazione", "rimossa_autore"}:
+            filters.append("s.Visibilita = 'rimossa'")
+            withdrawal = "EXISTS" if visibility_filter == "rimossa_autore" else "NOT EXISTS"
+            filters.append(f"{withdrawal} (SELECT 1 FROM EVENTO_LOG r WHERE r.IdSegnalazione=s.IdSegnalazione AND r.TipoAzione='ritiro_segnalazione')")
+        if cursor_id:
+            filters.append("s.IdSegnalazione < %s")
+            params.append(cursor_id)
     query = """SELECT s.IdSegnalazione AS id, s.Tipo AS tipo, s.Titolo AS titolo,
         s.Descrizione AS descrizione, s.Stato AS stato, s.Visibilita AS visibilita,
         COALESCE(s.Indirizzo, '') AS indirizzo,
         CONCAT(u.Nome, ' ', u.Cognome) AS autore, s.DataCreazione AS data_creazione,
         s.IdQuartiere AS quartiere_id, q.Nome AS quartiere,
+        (SELECT COUNT(*) FROM EVENTO_LOG e WHERE e.IdSegnalazione=s.IdSegnalazione
+         AND e.TipoAzione='ritiro_segnalazione') AS ritirata_autore,
         (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', cat.IdCategoria, 'nome', cat.Nome))
          FROM SEGNALAZIONE_CATEGORIA sc JOIN CATEGORIA cat ON cat.IdCategoria=sc.IdCategoria
          WHERE sc.IdSegnalazione=s.IdSegnalazione) AS categorie_json,
@@ -87,9 +101,12 @@ def list_report_records(search="", neighborhood_id=None, category_ids=None, stat
         FROM SEGNALAZIONE s JOIN UTENTE u ON u.IdUtente=s.IdAutore
         LEFT JOIN QUARTIERE q ON q.IdQuartiere=s.IdQuartiere
         WHERE """ + " AND ".join(filters) + (
+            " ORDER BY s.IdSegnalazione DESC LIMIT %s" if author_id and visibility_filter is not None else
             " ORDER BY sostegni DESC, s.DataCreazione DESC, s.IdSegnalazione DESC LIMIT 100"
             if order == "sostegni" else
             " ORDER BY s.DataCreazione DESC, s.IdSegnalazione DESC LIMIT 100")
+    if author_id and visibility_filter is not None:
+        params.append(limit)
     with database_cursor() as cursor:
         cursor.execute(query, (viewer_id, viewer_id, *params))
         rows = cursor.fetchall()
@@ -216,9 +233,17 @@ def moderate_reports(ids, moderator_id, visibility):
             row = cursor.fetchone()
             if not row:
                 missing.append(report_id)
-            elif row["Visibilita"] == visibility or row["Visibilita"] == "rimossa":
-                unchanged += 1  # rimosso è terminale: non ripubblicare contenuti ritirati
+            elif row["Visibilita"] == visibility:
+                unchanged += 1
+            elif row["Visibilita"] == "rimossa" and visibility != "pubblica":
+                unchanged += 1
             else:
+                if row["Visibilita"] == "rimossa":
+                    cursor.execute("""SELECT 1 FROM EVENTO_LOG WHERE IdSegnalazione=%s
+                        AND TipoAzione='ritiro_segnalazione' LIMIT 1""", (report_id,))
+                    if cursor.fetchone():
+                        unchanged += 1  # il ritiro dell'autore resta definitivo
+                        continue
                 cursor.execute("UPDATE SEGNALAZIONE SET Visibilita=%s WHERE IdSegnalazione=%s", (visibility, report_id))
                 cursor.execute("""INSERT INTO EVENTO_LOG
                     (IdEsecutore, TipoAzione, Esito, Dettagli, IdSegnalazione)
@@ -243,11 +268,13 @@ def withdraw_report(report_id, author_id):
     return True
 
 
-def list_moderation_reports(cursor_id=None, visibility="bozza", limit=25):
+def list_moderation_reports(cursor_id=None, visibility="pubblica", limit=25):
     with database_cursor() as cursor:
         cursor.execute("""SELECT s.IdSegnalazione AS id, s.Titolo AS titolo, s.Tipo AS tipo,
             s.Stato AS stato, s.Visibilita AS visibilita, s.DataCreazione AS data_creazione,
-            CONCAT(u.Nome, ' ', u.Cognome) AS autore, u.IdUtente AS autore_id
+            CONCAT(u.Nome, ' ', u.Cognome) AS autore, u.IdUtente AS autore_id,
+            (SELECT COUNT(*) FROM EVENTO_LOG e WHERE e.IdSegnalazione=s.IdSegnalazione
+             AND e.TipoAzione='ritiro_segnalazione') AS ritirata_autore
             FROM SEGNALAZIONE s JOIN UTENTE u ON u.IdUtente=s.IdAutore
             WHERE s.Visibilita=%s AND (%s IS NULL OR s.IdSegnalazione < %s)
             ORDER BY s.IdSegnalazione DESC LIMIT %s""",

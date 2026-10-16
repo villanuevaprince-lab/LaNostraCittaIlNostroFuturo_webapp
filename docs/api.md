@@ -97,11 +97,11 @@ const response = await fetch("/api/segnalazioni", {
 ```
 
 L'autore proviene dalla sessione; valori client come `id_autore`, stato e
-visibilità non vengono usati. File, segnalazione inizialmente in bozza, categorie,
-storico iniziale ed evento vengono registrati insieme nella transazione SQL;
-la visibilità resta `bozza` finché il moderatore approva. Se il DB fallisce,
+visibilità non vengono usati. File, segnalazione, categorie, pubblicazione,
+storico iniziale ed evento vengono registrati nella stessa transazione SQL;
+la visibilità passa a `pubblica` dopo aver inserito l'allegato. Se il DB fallisce,
 il file appena scritto viene eliminato. La risposta è `201` e include la
-destinazione `/dashboard` con messaggio flash di conferma.
+destinazione `/dashboard` con messaggio flash di pubblicazione.
 
 Le coordinate non sono lette dall'EXIF: arrivano dal pin e sono validate sul
 server. La colonna `DescrizioneAccessibile` esistente viene compilata
@@ -116,6 +116,14 @@ I contenuti non pubblici sono visibili solo all'autore e ai moderatori.
 `GET /reports/<id>` mostra anche una mappa; segnalazioni storiche prive di
 coordinate sono mostrate senza pin. `DELETE /api/segnalazioni/<id>` consente
 all'autore il ritiro logico, irreversibile via UI, con evento di audit.
+Per `?mie=1`, le righe includono `ritirata_autore` così la dashboard distingue
+una rimozione del moderatore da un ritiro volontario.
+
+`GET /api/me/segnalazioni?vista=<vista>&cursor=<id>` richiede login e alimenta
+la dashboard in pagine da 25. Le viste sono `tutte`, `pubblica`, `bozza`,
+`nascosta`, `rimossa_moderazione` e `rimossa_autore`; restituisce `items` e
+`next_cursor`. La separazione dei ritiri è verificata sul server tramite
+gli eventi di audit.
 
 ### `GET /api/allegati/<id>`
 
@@ -139,8 +147,9 @@ un nome casuale generato dal server e viene confinato nella directory upload.
 Tutti gli endpoint seguenti richiedono una riga corrispondente in `MODERATORE`
 e CSRF sulle mutazioni.
 
-- `GET /api/moderazione/coda?visibilita=bozza&cursor=<id>&limit=25`: coda
-  keyset (`bozza`, `pubblica`, `nascosta`), `items` e `next_cursor`.
+- `GET /api/moderazione/coda?visibilita=pubblica&cursor=<id>&limit=25`: coda
+  keyset (`pubblica`, `bozza` storiche, `nascosta`, `rimossa`), `items` e
+  `next_cursor`. La vista `rimossa` include `ritirata_autore`.
 - `POST /api/moderazione/segnalazioni/azioni`: JSON `ids` (1–50 interi) e
   `azione` (`approva`, `rifiuta`, `nascondi`), transazione e audit per elemento.
 - `GET /api/moderazione/utenti?cursor=<id>&q=<prefisso>`: account non moderatori
@@ -162,8 +171,9 @@ e CSRF sulle mutazioni.
   registra revoca e riattiva l'account.
 
 `GET /api/stati` include `prossimi` con le transizioni consentite dalla
-macchina a stati. `rimossa` è terminale: un contenuto ritirato o rifiutato non
-può essere approvato nuovamente. Blocco utenti moderatori non consentito;
+macchina a stati. Un moderatore può ripubblicare i contenuti che ha rimosso:
+la transizione viene registrata in `EVENTO_LOG`. Il ritiro dell'autore resta
+definitivo. Blocco utenti moderatori non consentito;
 la revoca amministrativa può rimuovere anche un ban senza scadenza.
 
 ## Mappa

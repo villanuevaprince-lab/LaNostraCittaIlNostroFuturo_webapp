@@ -23,8 +23,15 @@
     </div>
     <div class="filter-row">
       <label class="field">Quartiere<select id="filter-neighborhood"><option value="">Tutti i quartieri</option></select></label>
-      <fieldset class="category-fieldset"><legend>Categorie (almeno una corrispondente)</legend>
-        <div id="filter-categories" class="tag-options"></div></fieldset>
+      <div class="field"><span id="category-filter-label">Categorie</span>
+        <details class="category-dropdown" aria-labelledby="category-filter-label">
+          <summary id="category-filter-summary">Tutte le categorie</summary>
+          <div class="category-dropdown-panel">
+            <p class="hint">Puoi selezionare più categorie.</p>
+            <div id="filter-categories" class="tag-options"></div>
+          </div>
+        </details>
+      </div>
       <label class="field">Stato<select id="filter-state">
         <option value="">Tutti gli stati</option><option value="nuova">Nuova</option>
         <option value="aperta">Aperta</option><option value="in_valutazione">In valutazione</option>

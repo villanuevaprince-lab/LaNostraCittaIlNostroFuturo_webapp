@@ -11,14 +11,14 @@ commenti e sostegni sono salvati nel database.
   preesistenti vengono verificati e aggiornati al login.
 - Cookie di sessione HttpOnly, SameSite=Lax, CSRF per le richieste mutative e
   limiti per login/registrazione.
-- Bacheca con ricerca per testo, quartiere, categorie multiple (almeno una
-  corrispondente) e stato; le categorie appaiono come tag sulle schede.
+- Bacheca con ricerca per testo, quartiere, categorie multiple in un menu a
+  tendina (almeno una corrispondente) e stato; categorie come tag sulle schede.
 - Profilo con bio, quartiere di interesse, preferenza notifiche, avatar e cambio
   password verificato; modifica password invalida le altre sessioni.
 - Pagina dedicata con mappa Leaflet, ricerca indirizzo su richiesta, pin
   trascinabile, selezione di 1–5 categorie, coordinate e indirizzo salvati in
-  MySQL; foto/video obbligatorio.
-  I nuovi contenuti attendono approvazione e sono visibili subito all'autore.
+  MySQL; foto/video obbligatorio. I nuovi contenuti sono pubblici dopo
+  l'inserimento dell'allegato nella stessa transazione.
 - Validazione upload JPEG/PNG/WebP/MP4/WebM fino a 20 MB. Le immagini sono
   verificate con Pillow e risalvate senza metadati EXIF; non si estraggono
   coordinate GPS.
@@ -28,9 +28,12 @@ commenti e sostegni sono salvati nel database.
   (massimo 50 per operazione), cambio di stato, azioni individuali o batch;
   tabella utenti ricercabile con email e tipo di blocco. Ban senza scadenza,
   blocchi temporanei e revoche sono registrati negli eventi di audit.
-- Scheda dettaglio con posizione su mappa e ritiro autonomo dalla dashboard.
+- Vista "Eliminati" con recupero dei contenuti rimossi dai moderatori;
+  i ritiri volontari dell'autore non vengono ripubblicati.
+- Scheda dettaglio con posizione su mappa e dashboard con viste separate per
+  pubblicate, rimosse, ritirate, nascoste e bozze storiche.
 - Storico stato, evento di invio e allegato salvati nella stessa
-  transazione MySQL della segnalazione. La pubblicazione avviene dopo la revisione;
+  transazione MySQL della segnalazione. La pubblicazione è immediata;
   i trigger impediscono la pubblicazione senza allegato e la rimozione
   dell'ultimo allegato di una segnalazione pubblica.
 
@@ -147,6 +150,7 @@ Le richieste che modificano dati richiedono il token CSRF nell'header
 | `GET /api/geo/search`, `GET /api/geo/reverse` | Sessione | Geocodifica di Milano su richiesta |
 | `GET /api/quartieri`, `GET /api/categorie` | Pubblico | Cataloghi attivi |
 | `GET /api/segnalazioni` | Pubblico | Ricerca, filtri; `categoria` ripetibile; `?mie=1` richiede login |
+| `GET /api/me/segnalazioni` | Sessione | Archivio personale paginato e filtro per pubblicate, rimosse, ritirate, nascoste |
 | `POST /api/segnalazioni` | Sessione | `multipart/form-data`, 1–5 `categoria_ids`, allegato obbligatorio |
 | `GET /api/segnalazioni/<id>` | Pubblico | Dettaglio e commenti |
 | `DELETE /api/segnalazioni/<id>` | Autore | Ritiro logico del contenuto |

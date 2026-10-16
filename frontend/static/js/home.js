@@ -3,6 +3,7 @@ const status = document.querySelector("#list-status");
 const search = document.querySelector("#search-input");
 const neighborhood = document.querySelector("#filter-neighborhood");
 const categoriesRoot = document.querySelector("#filter-categories");
+const categorySummary = document.querySelector("#category-filter-summary");
 const state = document.querySelector("#filter-state");
 const sort = document.querySelector("#sort-reports");
 const isAuthenticated = document.querySelector("[data-authenticated]")?.dataset.authenticated === "true";
@@ -27,6 +28,12 @@ async function loadFilters() {
     const text = document.createElement("span"); text.textContent = row.nome;
     label.append(input, text); categoriesRoot.append(label);
   });
+  categorySummary.textContent = categories.length ? "Tutte le categorie" : "Nessuna categoria disponibile";
+}
+
+function updateCategorySummary() {
+  const selected = [...categoriesRoot.querySelectorAll("input:checked")];
+  categorySummary.textContent = selected.length ? `Categorie selezionate: ${selected.length}` : "Tutte le categorie";
 }
 
 async function loadReports() {
@@ -244,5 +251,6 @@ function createCard(report) {
 }
 
 search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadReports, 250); });
-[neighborhood, state, sort, categoriesRoot].forEach((element) => element.addEventListener("change", loadReports));
+[neighborhood, state, sort].forEach((element) => element.addEventListener("change", loadReports));
+categoriesRoot.addEventListener("change", () => { updateCategorySummary(); loadReports(); });
 loadFilters().then(loadReports).catch((error) => { status.textContent = error.message; });
