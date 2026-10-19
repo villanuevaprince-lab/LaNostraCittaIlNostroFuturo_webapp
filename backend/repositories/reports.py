@@ -21,7 +21,7 @@ STATE_TRANSITIONS = {
     "in_lavorazione": {"presa_in_carico", "risolta", "chiusa"},
     "presa_in_carico": {"in_lavorazione", "risolta", "chiusa"},
     "risolta": {"aperta", "chiusa"},
-    "chiusa": set(),
+    "chiusa": {"aperta", "in_valutazione", "in_lavorazione", "presa_in_carico", "risolta"},
 }
 
 
@@ -279,10 +279,13 @@ def withdraw_report(report_id, author_id):
     return True
 
 
-def list_moderation_reports(cursor_id=None, visibility="pubblica", limit=25):
+def list_moderation_reports(cursor_id=None, visibility="tutte", limit=25):
     # La coda è organizzata per stato operativo. "rimossa" resta una vista
     # speciale che raccoglie tutti i contenuti eliminati dai moderatori/autori.
-    if visibility == "rimossa":
+    if visibility == "tutte":
+        visibility_clause = "s.Visibilita NOT IN ('rimossa', 'nascosta')"
+        visibility_params = []
+    elif visibility == "rimossa":
         visibility_clause = "s.Visibilita='rimossa'"
         visibility_params = []
     elif visibility in STATE_TRANSITIONS:

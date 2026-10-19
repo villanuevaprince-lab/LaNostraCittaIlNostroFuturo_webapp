@@ -231,6 +231,19 @@ def test_moderation_view_can_filter_by_report_state(client, logged_in, monkeypat
     assert queue.call_args.args == (None, "in_lavorazione", 25)
 
 
+def test_moderation_all_view_supports_five_then_ten(client, logged_in, monkeypatch):
+    from backend import reports, users
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": True)
+    queue = Mock(side_effect=[
+        {"items": [{"id": 30}], "next_cursor": 30},
+        {"items": [{"id": 20}], "next_cursor": None},
+    ])
+    monkeypatch.setattr(reports, "list_moderation_reports", queue)
+    assert client.get("/api/moderazione/coda?vista=tutte&limit=5").get_json()["next_cursor"] == 30
+    assert client.get("/api/moderazione/coda?vista=tutte&cursor=30&limit=10").get_json()["next_cursor"] is None
+    assert [call.args for call in queue.call_args_list] == [(None, "tutte", 5), (30, "tutte", 10)]
+
+
 def test_comments_and_support_use_repository(client, logged_in, monkeypatch):
     from backend import reports
     monkeypatch.setattr(reports, "get_report_record", lambda _: {"id": 1, "visibilita": "pubblica"})
@@ -288,7 +301,7 @@ def test_user_search_and_permanent_ban_require_moderator(client, logged_in, monk
 def test_state_catalog_exposes_allowed_transitions(client):
     states = {row["codice"]: row for row in client.get("/api/stati").get_json()}
     assert "risolta" in states["aperta"]["prossimi"]
-    assert states["chiusa"]["prossimi"] == []
+    assert "aperta" in states["chiusa"]["prossimi"]
 
 
 def test_security_headers(client):

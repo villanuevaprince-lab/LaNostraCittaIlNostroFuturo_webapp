@@ -153,7 +153,7 @@ async function loadReports(reset = false) {
   const requestedCursor = reportCursor;
   status.textContent = "Caricamento coda…";
   try {
-    const params = new URLSearchParams({ vista: filter.value, limit: "25" });
+    const params = new URLSearchParams({ vista: filter.value, limit: requestedCursor ? "10" : "5" });
     if (reportCursor) params.set("cursor", reportCursor);
     const [page, states] = await Promise.all([
       requestJSON(`/api/moderazione/coda?${params}`), requestJSON("/api/stati"),

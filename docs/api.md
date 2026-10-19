@@ -147,12 +147,14 @@ un nome casuale generato dal server e viene confinato nella directory upload.
 Tutti gli endpoint seguenti richiedono una riga corrispondente in `MODERATORE`
 e CSRF sulle mutazioni.
 
-- `GET /api/moderazione/coda?vista=aperta&cursor=<id>&limit=25`: coda filtrata
+- `GET /api/moderazione/coda?vista=aperta&cursor=<id>&limit=10`: coda filtrata
   per stato (`nuova`, `aperta`, `in_valutazione`, `in_lavorazione`,
-  `presa_in_carico`, `risolta`, `chiusa`) oppure `vista=rimossa` per tutti i
-  contenuti eliminati. Il parametro precedente `visibilita` resta accettato
-  per compatibilità. La risposta usa paginazione keyset con `items` e
-  `next_cursor`; la vista `rimossa` include `ritirata_autore`.
+  `presa_in_carico`, `risolta`, `chiusa`). `vista=tutte` include tutte le
+  segnalazioni tranne quelle nascoste o eliminate; `vista=rimossa` raccoglie
+  gli eliminati. La UI richiede 5 elementi iniziali e poi 10 per clic. Il
+  parametro precedente `visibilita` resta accettato per compatibilità. La
+  risposta usa paginazione keyset con `items` e `next_cursor`; la vista
+  `rimossa` include `ritirata_autore`.
 - `POST /api/moderazione/segnalazioni/azioni`: JSON `ids` (1–50 interi) e
   `azione` (`approva`, `rifiuta`, `nascondi`), transazione e audit per elemento.
 - `GET /api/moderazione/utenti?cursor=<id>&q=<prefisso>`: account non moderatori

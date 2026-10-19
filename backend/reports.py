@@ -213,10 +213,10 @@ def moderate_report_visibility(report_id):
 @reports.get("/api/moderazione/coda")
 @role_required("moderatore")
 def moderation_queue():
-    visibility = request.args.get("vista", request.args.get("visibilita", "nuova"))
+    visibility = request.args.get("vista", request.args.get("visibilita", "tutte"))
     cursor = request.args.get("cursor", type=int)
     limit = request.args.get("limit", 25, type=int)
-    if visibility not in {*STATE_TRANSITIONS, "rimossa", "pubblica", "bozza", "nascosta"} or not 1 <= limit <= 50 or cursor is not None and cursor < 1:
+    if visibility not in {*STATE_TRANSITIONS, "tutte", "rimossa", "pubblica", "bozza", "nascosta"} or not 1 <= limit <= 50 or cursor is not None and cursor < 1:
         return jsonify(error="Filtro o paginazione non validi."), 400
     return jsonify(list_moderation_reports(cursor, visibility, limit))
 

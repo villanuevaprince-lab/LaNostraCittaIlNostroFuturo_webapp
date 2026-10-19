@@ -9,7 +9,7 @@ from backend import database, users
 from backend.app import create_app
 from backend.repositories import catalog
 from backend.repositories.reports import (
-    attachment_content, create_report_record, get_report_record, list_moderation_reports,
+    attachment_content, change_report_state, create_report_record, get_report_record, list_moderation_reports,
     list_moderation_users, list_report_records,
     moderate_reports, permanently_ban_user, set_support, withdraw_report,
 )
@@ -205,6 +205,26 @@ def test_moderation_queue_uses_state_and_stops_cursor_at_last_page(fake_mysql):
 
     cursor.fetchall.return_value = []
     assert list_moderation_reports(8, "in_lavorazione", 2)["next_cursor"] is None
+
+
+def test_moderation_all_view_excludes_hidden_and_removed(fake_mysql):
+    _, cursor = fake_mysql
+    cursor.fetchall.return_value = [{"id": 5, "data_creazione": datetime(2026, 9, 29)}]
+    page = list_moderation_reports(None, "tutte", 5)
+    sql, params = cursor.execute.call_args.args
+    assert "s.Visibilita NOT IN ('rimossa', 'nascosta')" in sql
+    assert params == (None, None, 6)
+    assert page["next_cursor"] is None
+
+
+def test_closed_report_can_reopen_and_records_history(fake_mysql):
+    connection, cursor = fake_mysql
+    cursor.fetchone.side_effect = [{"Stato": "chiusa"}, {"1": 1}]
+    assert change_report_state(12, 9, "aperta", "Riaperta") is True
+    history = next(call.args[1] for call in cursor.execute.call_args_list
+                   if "INSERT INTO STORICO_STATO" in call.args[0])
+    assert history == (12, "chiusa", "aperta", 9, "Riaperta")
+    connection.commit.assert_called_once()
 
 
 def test_permanent_ban_preserves_prior_block_and_audits(fake_mysql):
