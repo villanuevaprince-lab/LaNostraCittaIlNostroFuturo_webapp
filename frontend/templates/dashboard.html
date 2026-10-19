@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — La Nostra Città{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>{% endblock %}
+{% block content %}
+  <section class="hero"><div><p class="eyebrow">Area personale</p><h1>La tua dashboard</h1>
+    <p>Consulta le tue segnalazioni e proposte pubblicate, rimosse o ritirate. Puoi ritirare un contenuto ancora attivo.</p></div>
+    <a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a></section>
+  <section class="panel"><div class="section-heading"><div><p class="eyebrow">Archivio personale</p>
+    <h2>Le tue segnalazioni e proposte</h2></div>
+    <label class="field">Vista<select id="dashboard-filter">
+      <option value="tutte">Tutte</option><option value="pubblica">Pubblicate</option>
+      <option value="rimossa_moderazione">Rimosse dai moderatori</option>
+      <option value="rimossa_autore">Ritirate da te</option><option value="nascosta">Nascoste</option>
+      <option value="bozza">In revisione</option>
+    </select></label></div>
+    <p id="dashboard-status" class="status" role="status">Caricamento…</p>
+    <div id="my-reports" class="report-grid"></div>
+    <button id="dashboard-next" class="button button-secondary" type="button" hidden>Carica altri</button>
+  </section>
+{% endblock %}

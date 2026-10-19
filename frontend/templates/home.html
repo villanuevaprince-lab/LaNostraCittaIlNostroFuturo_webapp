@@ -7,11 +7,11 @@
     <div>
       <p class="eyebrow">Partecipazione civica</p>
       <h1>Miglioriamo insieme la nostra città</h1>
-      <p>Consulta le segnalazioni dei cittadini oppure proponi una nuova idea.</p>
+      <p>Scopri cosa succede nei quartieri di Milano, partecipa alla discussione e sostieni le idee che contano per te.</p>
     </div>
     <a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
   </section>
-  <section class="panel" aria-labelledby="segnalazioni-title">
+  <section class="panel" aria-labelledby="segnalazioni-title" data-authenticated="{{ 'true' if g.user else 'false' }}">
     <div class="section-heading">
       <div>
         <p class="eyebrow">Bacheca pubblica</p>
@@ -21,8 +21,29 @@
         <input id="search-input" type="search" maxlength="200" placeholder="Titolo, descrizione o luogo">
       </label>
     </div>
+    <div class="filter-row">
+      <label class="field">Quartiere<select id="filter-neighborhood"><option value="">Tutti i quartieri</option></select></label>
+      <div class="field"><span id="category-filter-label">Categorie</span>
+        <details class="category-dropdown" aria-labelledby="category-filter-label">
+          <summary id="category-filter-summary">Tutte le categorie</summary>
+          <div class="category-dropdown-panel">
+            <p class="hint">Puoi selezionare più categorie.</p>
+            <div id="filter-categories" class="tag-options"></div>
+          </div>
+        </details>
+      </div>
+      <label class="field">Stato<select id="filter-state">
+        <option value="">Tutti gli stati</option><option value="nuova">Nuova</option>
+        <option value="aperta">Aperta</option><option value="in_valutazione">In valutazione</option>
+        <option value="in_lavorazione">In lavorazione</option><option value="presa_in_carico">Presa in carico</option>
+        <option value="risolta">Risolta</option><option value="chiusa">Chiusa</option>
+      </select></label>
+      <label class="field">Ordina per<select id="sort-reports">
+        <option value="recenti">Più recenti</option><option value="sostegni">Più sostenute</option>
+      </select></label>
+    </div>
     <p id="list-status" class="status" role="status">Caricamento…</p>
     <div id="report-list" class="report-grid"></div>
-    <noscript>Attiva JavaScript per visualizzare la bacheca. Login e pubblicazione funzionano anche senza JavaScript.</noscript>
+    <noscript>Attiva JavaScript per caricare la bacheca e inviare i moduli.</noscript>
   </section>
 {% endblock %}

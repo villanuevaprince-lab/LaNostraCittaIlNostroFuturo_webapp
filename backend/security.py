@@ -3,6 +3,7 @@
 from functools import wraps
 
 from argon2 import PasswordHasher
+from argon2 import Type as Argon2Type
 from argon2.exceptions import InvalidHashError, VerificationError
 from flask import current_app, g, jsonify, redirect, request, session, url_for
 from flask_limiter import Limiter
@@ -10,16 +11,17 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import check_password_hash
 
-from backend.users import find_user_by_id
+from backend.users import find_user_by_id, has_role
 
 
 csrf = CSRFProtect()
 limiter = Limiter(key_func=get_remote_address)
+password_hasher = PasswordHasher(type=Argon2Type.ID)
 
 
 def safe_next(value):
     """Accettiamo solo pagine interne note: niente open redirect."""
-    return value if value in {"/", "/home", "/dashboard", "/reports/new"} else "/"
+    return value if value in {"/", "/home", "/dashboard", "/reports/new", "/profilo", "/moderazione"} else "/"
 
 
 def load_current_user():
@@ -29,7 +31,9 @@ def load_current_user():
         return
     user = find_user_by_id(user_id)
     # Verifichiamo lo stato a ogni richiesta, non soltanto al login.
-    if user and user["stato_account"] == "attivo" and not user["data_cancellazione"]:
+    if (user and user["stato_account"] == "attivo" and not user["data_cancellazione"]
+            and session.get("session_version", 0) == user.get("session_version", 0)):
+        user["is_moderator"] = has_role(user["id"])
         g.user = user
     else:
         session.clear()
@@ -47,10 +51,27 @@ def login_required(view):
     return protected
 
 
+def role_required(role="moderatore"):
+    """Autorizza in base al ruolo presente nel DB, mai a un dato del client."""
+    def decorator(view):
+        @wraps(view)
+        @login_required
+        def protected(*args, **kwargs):
+            from backend.users import has_role
+            if not has_role(g.user["id"], role):
+                if request.path.startswith("/api/"):
+                    return jsonify(error="Permesso insufficiente."), 403
+                return current_app.make_response(("Permesso insufficiente.", 403))
+            return view(*args, **kwargs)
+        return protected
+    return decorator
+
+
 def start_session(user):
     # Rimuove il precedente token CSRF e qualsiasi dato della sessione anonima.
     session.clear()
     session["user_id"] = user["id"]
+    session["session_version"] = user.get("session_version", 0)
     session.permanent = True
 
 
@@ -66,3 +87,8 @@ def verify_password(stored_hash, password):
     # I valori HASH_DEMO_NON_VALIDO del seed non sono credenziali di accesso.
     check_password_hash(current_app.extensions["dummy_password_hash"], password)
     return False
+
+
+def hash_password(password):
+    """I nuovi account vengono salvati con Argon2id."""
+    return password_hasher.hash(password)

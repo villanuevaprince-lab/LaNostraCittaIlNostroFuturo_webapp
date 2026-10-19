@@ -18,29 +18,29 @@
       <span class="tagline">Il Nostro Futuro</span>
     </div>
     <nav aria-label="Navigazione principale">
-      <a href="/">Home</a>
-      <a href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
+      <a class="nav-link" href="/">Home</a>
+      <a class="nav-link" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
       {% if g.user %}
         <span class="nav-user">Ciao, {{ g.user.nome }}</span>
-        <form class="inline-form" method="post" action="{{ url_for('auth.logout') }}">
+        <a class="nav-link" href="{{ url_for('pages.profile') }}">Profilo</a>
+        <a class="nav-link" href="{{ url_for('pages.dashboard') }}">Dashboard</a>
+        {% if g.user.is_moderator %}<a class="nav-link" href="{{ url_for('pages.moderation') }}">Moderazione</a>{% endif %}
+        <form class="inline-form" method="post" action="{{ url_for('auth_api.logout_api') }}" data-api-action>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="button-link" type="submit">Esci</button>
         </form>
       {% else %}
-        <a href="{{ url_for('auth.login') }}">Accedi</a>
-        <a class="button button-secondary" href="{{ url_for('auth.register') }}">Registrati</a>
+        <a class="nav-link" href="{{ url_for('auth.login') }}">Accedi</a>
+        <a class="button button-secondary nav-cta" href="{{ url_for('auth.register') }}">Registrati</a>
       {% endif %}
     </nav>
   </header>
   <main id="main">
-    {% if config.APP_MODE == 'demo' %}
-      <p class="mode-note">Modalità demo: account e segnalazioni sono temporanei e si cancellano al riavvio.</p>
-    {% endif %}
     {% for category, message in get_flashed_messages(with_categories=true) %}
       <div class="notice notice-{{ category }}" role="status">{{ message }}</div>
     {% endfor %}
     {% block content %}{% endblock %}
   </main>
-  <footer><p>Progetto scolastico — La Nostra Città, Il Nostro Futuro</p></footer>
+  <footer><p>La Nostra Città, Il Nostro Futuro · Progetto civico indipendente, non sito ufficiale del Comune di Milano.</p></footer>
 </body>
 </html>

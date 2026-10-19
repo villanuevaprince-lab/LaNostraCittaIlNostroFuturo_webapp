@@ -1,103 +1,169 @@
 # La Nostra Città, Il Nostro Futuro
 
-Progetto scolastico con **backend Flask** e **frontend HTML, CSS e JavaScript**.
-Le pagine HTML usano i template Jinja inclusi in Flask: non occorrono Node o un
-framework frontend. API e pagine sono servite dallo stesso indirizzo.
+Webapp Flask per segnalazioni e proposte civiche. Il backend espone API JSON;
+il frontend usa HTML, CSS responsive e moduli JavaScript vanilla. Il progetto
+legge e scrive esclusivamente MySQL 8 su Aiven. Account, segnalazioni,
+commenti e sostegni sono salvati nel database.
 
-## Funzioni disponibili
+## Funzioni
 
-- Bacheca pubblica con ricerca di segnalazioni e proposte.
-- Registrazione con nome, cognome, email univoca e password.
-- Login, logout e sessione firmata tramite cookie.
-- Creazione solo per utenti autenticati, nella pagina separata `/reports/new`.
-- Ritorno alla homepage con messaggio dopo una pubblicazione riuscita.
-- Modalità demo in memoria o collegamento al database MySQL esistente su Aiven.
+- Registrazione e login con password Argon2id; gli hash scrypt/PBKDF2/Argon2
+  preesistenti vengono verificati e aggiornati al login.
+- Cookie di sessione HttpOnly, SameSite=Lax, CSRF per le richieste mutative e
+  limiti per login/registrazione.
+- Bacheca con ricerca per testo, quartiere, categorie multiple in un menu a
+  tendina (almeno una corrispondente) e stato; categorie come tag sulle schede.
+- Profilo con bio, quartiere di interesse, preferenza notifiche, avatar e cambio
+  password verificato; modifica password invalida le altre sessioni.
+- Pagina dedicata con mappa Leaflet, ricerca indirizzo su richiesta, pin
+  trascinabile, selezione di 1–5 categorie, coordinate e indirizzo salvati in
+  MySQL; foto/video obbligatorio. I nuovi contenuti sono pubblici dopo
+  l'inserimento dell'allegato nella stessa transazione.
+- Validazione upload JPEG/PNG/WebP/MP4/WebM fino a 20 MB. Le immagini sono
+  verificate con Pillow e risalvate senza metadati EXIF; non si estraggono
+  coordinate GPS.
+- Commenti pubblici visibili anche agli ospiti; pubblicazione e sostegno
+  richiedono account e CSRF. I sostegni ripetuti sono idempotenti.
+- Coda moderazione a paginazione keyset, selezione di tutte le righe caricate
+  (massimo 50 per operazione), cambio di stato, azioni individuali o batch;
+  tabella utenti ricercabile con email e tipo di blocco. Ban senza scadenza,
+  blocchi temporanei e revoche sono registrati negli eventi di audit.
+- Vista "Eliminati" con recupero dei contenuti rimossi dai moderatori;
+  i ritiri volontari dell'autore non vengono ripubblicati.
+- Scheda dettaglio con posizione su mappa e dashboard con viste separate per
+  pubblicate, rimosse, ritirate, nascoste e bozze storiche.
+- Storico stato, evento di invio e allegato salvati nella stessa
+  transazione MySQL della segnalazione. La pubblicazione è immediata;
+  i trigger impediscono la pubblicazione senza allegato e la rimozione
+  dell'ultimo allegato di una segnalazione pubblica.
 
-## Pagine
+## Struttura
 
-| Rotta | Accesso | Funzione |
-| --- | --- | --- |
-| `/` | Pubblico | Homepage: sola consultazione, ricerca e link alla creazione |
-| `/home` | Pubblico | Reindirizza a `/` |
-| `/register` | Pubblico | GET form, POST registrazione e accesso automatico |
-| `/login` | Pubblico | GET form, POST autenticazione |
-| `/logout` | POST con CSRF | Uscita e ritorno alla home |
-| `/reports/new` | Autenticato | GET form dedicato, POST pubblicazione |
-| `/dashboard` | Autenticato | Alias della bacheca: reindirizza a `/` |
-
-Chi apre `/reports/new` senza sessione passa per
-`/login?next=/reports/new`. Anche il collegamento alla registrazione conserva
-questa destinazione. Nessun form di creazione o modal è presente nella home.
-
-## Moduli
-
-| Percorso | Responsabilità |
+| Percorso | Contenuto |
 | --- | --- |
-| `backend/app.py` | Application factory, configurazione, estensioni ed errori |
-| `backend/auth.py` | Registrazione, login e logout |
-| `backend/security.py` | Sessioni, controllo accesso, CSRF e limitazione tentativi |
-| `backend/forms.py` | Validazione sul server |
-| `backend/users.py` | Query sulla tabella UTENTE |
-| `backend/database.py` | Connessione Aiven e repository segnalazioni/demo |
-| `backend/pages.py`, `backend/reports.py` | Bacheca, nuova segnalazione e API |
-| `frontend/templates/` | Base comune, home, login, registrazione, nuova segnalazione, errori |
-| `frontend/static/css/`, `frontend/static/js/` | Stili e miglioramenti JavaScript |
-| `backend/tests/` | Test isolati e controlli SQL con connessioni simulate |
+| `backend/app.py` | Application factory Flask, configurazione, errori e middleware |
+| `backend/api/` | API JSON per autenticazione e cataloghi |
+| `backend/auth.py`, `backend/security.py` | Form web, sessioni, CSRF, hash e ruoli |
+| `backend/repositories/` | Query SQL parametrizzate per cataloghi e segnalazioni |
+| `backend/services/` | Regole di pubblicazione e validazione/salvataggio allegati |
+| `backend/reports.py`, `backend/pages.py` | Blueprint per API segnalazioni e pagine |
+| `frontend/templates/` | Pagine HTML accessibili servite da Flask |
+| `frontend/static/` | CSS e moduli ES vanilla |
+| `database/` | Schema completo, estensione del DB esistente e seed di riferimento |
+| `backend/tests/` | Test con Flask test client e connessione MySQL simulata |
 
-Solo `frontend/static/` è pubblica. I template non sono scaricabili come file
-statici: non si può aggirare la protezione aprendo direttamente un file HTML.
+## Avvio locale
 
-## Avvio rapido (Python 3.10+)
-
-Dalla radice del progetto:
+Richiesti Python 3.11 o superiore e pip.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
+cp .env.example .env
+# Compila .env con SECRET_KEY, DB_HOST, DB_PORT, DB_USER e DB_PASSWORD;
+# copia il certificato CA Aiven in certificates/ca.pem.
 python -m backend.app
 ```
 
-Su Windows PowerShell, al posto di `source`:
+Su Windows PowerShell attiva l'ambiente con `.venv\Scripts\Activate.ps1`, copia
+`.env.example` in `.env` con `Copy-Item .env.example .env` e avvia sempre dalla
+radice con `python -m backend.app` (non `python backend/app.py`). Apri
+<http://localhost:3000>; `GET /api/health` restituisce `ok` solo se la
+connessione MySQL è effettiva. Senza credenziali o certificato CA le API che
+richiedono il database rispondono `503`; non vengono mostrati dati fittizi.
+Rimuovi `APP_MODE=demo` da eventuali vecchi `.env`: non è più supportato.
 
-```powershell
-.venv\Scripts\Activate.ps1
-```
+## Configurazione MySQL Aiven esistente
 
-Se PowerShell blocca gli script, puoi usare direttamente
-`.venv\Scripts\python.exe` al posto di `python`, senza cambiare la policy di sistema.
+1. Crea `.env` copiando `.env.example`; `.env` è escluso da Git.
+2. Imposta una `SECRET_KEY` casuale di almeno 32 caratteri,
+   i parametri `DB_*` e `DB_SSL_CA_PATH`. Inserisci localmente le credenziali.
+3. Verifica lo schema reale e crea un backup prima di qualsiasi DDL.
+4. Se il DB contiene solo lo schema iniziale, applica **una sola volta**
+   `database/migrations/002_extend_existing_schema.sql`; poi applica
+   `database/seeds/001_reference_data.sql`. Le migrazioni non sono idempotenti.
+   Controlla eventuali segnalazioni già pubbliche senza allegato:
 
-Apri [http://localhost:5000](http://localhost:5000) e crea un account tramite
-**Registrati**. In demo non esistono credenziali predefinite: gli account e i
-contenuti aggiunti spariscono al riavvio. Usa un solo processo per la demo.
+   ```sql
+   SELECT s.IdSegnalazione FROM SEGNALAZIONE s
+   LEFT JOIN ALLEGATO a ON a.IdSegnalazione = s.IdSegnalazione
+   WHERE s.Visibilita = 'pubblica'
+   GROUP BY s.IdSegnalazione HAVING COUNT(a.IdAllegato) = 0;
+   ```
 
-La chiave di sessione viene generata in memoria se non configurata in demo;
-per un valore stabile genera una chiave e inseriscila nel file locale `.env`:
+   Risolvi i casi trovati e applica **una sola volta**
+   `database/migrations/003_enforce_attachment_publication.sql` tramite il
+   client `mysql` (lo script usa `DELIMITER`).
+5. Se quartieri, stati, categorie, storico, allegati estesi e tabelle ponte sono
+   già presenti, non rilanciare la migrazione 002: confronta lo schema e, se
+   serve, esegui il seed idempotente e la migrazione 003 solo se mancano i trigger.
+   Il seed aggiunge gli 88 NIL del Comune di
+   Milano e rende inattivi i nove raggruppamenti generici del vecchio seed,
+   senza cancellare righe o alterare i riferimenti delle segnalazioni esistenti.
+6. Per questa versione, dopo un backup, applica **una sola volta**
+   `database/migrations/004_civic_features.sql` su Aiven. Aggiunge Bio,
+   NotificheEmail, AvatarRiferimento, SessionVersion e un indice sulla coda.
+   L'app non la esegue automaticamente: avvia il nuovo codice solo dopo la
+   migrazione. Verifica prima che tali colonne/indice non esistano già.
+6. Avvia l'app. La connessione richiede il certificato CA e verifica certificato
+   e hostname TLS. L'app non esegue migrazioni automatiche.
 
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
+Le funzioni di selezione multipla, tag e ban permanente usano le tabelle
+`SEGNALAZIONE_CATEGORIA` e `BLOCCO` già presenti: non serve una nuova
+migrazione oltre alla 004 per questa modifica.
 
-## Aiven: database già esistente
+Gli 88 NIL provengono dal dataset pubblico DS964 del Comune di Milano:
+<https://dati.comune.milano.it/dataset/e8e765fc-d882-40b8-95d8-16ff3d39eb7c>.
+Non mettere password, certificato CA o `.env` nel repository; il seed SQL si
+applica manualmente al tuo database, preferibilmente dopo un backup.
+Se una password Aiven è già stata inserita in un commit pubblico, cambiala
+su Aiven: sostituire il valore nel file corrente non la rimuove dalla cronologia
+Git. Aggiorna quindi soltanto il tuo `.env` locale con la nuova password.
 
-1. Copia `.env.example` in `.env`, senza commettere quest'ultimo.
-2. Imposta `APP_MODE=database` e una `SECRET_KEY` casuale di almeno 32 caratteri.
-3. Inserisci i parametri Aiven (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`).
-4. Scarica il certificato CA e salva il file indicato da `DB_SSL_CA_PATH`.
-5. Avvia Flask. La connessione verifica certificato e identità del server.
+`database/schema/001_full_schema.sql` serve a creare un **database nuovo** e
+non deve essere eseguito sopra il DB Aiven popolato. Gli utenti del seed con
+`HASH_DEMO_NON_VALIDO_*` non possono effettuare il login: registra un account
+con una nuova email. Per abilitare un moderatore, un amministratore DB deve
+aggiungere l'utente alla tabella `MODERATORE` dopo aver verificato l'ID.
 
-Queste funzionalità usano le colonne originali di `UTENTE`, `SEGNALAZIONE` e
-`SOSTEGNO`. **Non occorre eseguire una nuova migrazione** e l'app non crea
-automaticamente tabelle. Gli script in `database/` rimangono disponibili per
-installazioni nuove; non vanno rilanciati sul database già popolato.
+I file sono conservati in `storage/uploads/` rispetto alla radice del progetto,
+indipendentemente dalla directory di avvio, ed esclusi da Git. Per conservare
+anche foto e video dopo riavvii o nuove installazioni, configura `UPLOAD_FOLDER`
+su un volume persistente con backup. MySQL conserva i riferimenti ai file,
+non i byte degli allegati. Non condividere la cartella con altri servizi.
+Una futura migrazione a object storage deve mantenere i controlli MIME,
+dimensione, nomi casuali e autorizzazione alla lettura.
 
-Gli utenti del seed con `HASH_DEMO_NON_VALIDO_*` non possono autenticarsi:
-registrati con una nuova email. Gli hash Argon2 della precedente app Node sono
-compatibili; i nuovi account usano scrypt tramite Werkzeug.
+## API principali
 
-**Credenziali:** non inserire password reali in `.env.example`. Se una password
-è già stata pubblicata su GitHub, cambiala su Aiven: sostituirla nell'ultimo commit
-non la rimuove dalla cronologia.
+Le richieste che modificano dati richiedono il token CSRF nell'header
+`X-CSRFToken`, disponibile nel meta `csrf-token` delle pagine.
+
+| Metodo e percorso | Accesso | Uso |
+| --- | --- | --- |
+| `POST /api/auth/register` | Pubblico | Registrazione JSON e sessione |
+| `POST /api/auth/login` | Pubblico | Accesso JSON |
+| `POST /api/auth/logout` | Sessione | Uscita |
+| `GET/PATCH/DELETE /api/auth/me` | Sessione | Profilo e cancellazione logica |
+| `POST /api/auth/me/password`, `POST /api/auth/me/avatar` | Sessione | Password e immagine profilo |
+| `GET /api/geo/search`, `GET /api/geo/reverse` | Sessione | Geocodifica di Milano su richiesta |
+| `GET /api/quartieri`, `GET /api/categorie` | Pubblico | Cataloghi attivi |
+| `GET /api/segnalazioni` | Pubblico | Ricerca, filtri; `categoria` ripetibile; `?mie=1` richiede login |
+| `GET /api/me/segnalazioni` | Sessione | Archivio personale paginato e filtro per pubblicate, rimosse, ritirate, nascoste |
+| `POST /api/segnalazioni` | Sessione | `multipart/form-data`, 1–5 `categoria_ids`, allegato obbligatorio |
+| `GET /api/segnalazioni/<id>` | Pubblico | Dettaglio e commenti |
+| `DELETE /api/segnalazioni/<id>` | Autore | Ritiro logico del contenuto |
+| `POST /api/segnalazioni/<id>/commenti` | Sessione | Pubblica un commento |
+| `GET/PUT/DELETE /api/segnalazioni/<id>/sostegno` | Sessione | Legge, esprime o ritira sostegno (richieste ripetute idempotenti) |
+| `GET /api/allegati/<id>` | Pubblico se segnalazione pubblica | Scarica allegato controllato |
+| `PATCH /api/segnalazioni/<id>/stato` | Moderatore | Transizione di stato e storico |
+| `/api/moderazione/*` | Moderatore | Coda, azioni batch, ricerca utenti e blocchi permanenti/temporanei |
+
+La documentazione dettagliata è in [`docs/api.md`](docs/api.md) e
+[`docs/architettura.md`](docs/architettura.md).
+Per la procedura completa di installazione e configurazione Aiven consulta
+[`docs/configurazione.md`](docs/configurazione.md).
 
 ## Test
 
@@ -105,29 +171,22 @@ non la rimuove dalla cronologia.
 python -m pytest -q
 ```
 
-I test non contattano Aiven. Verificano form, sessioni, autorizzazioni, CSRF,
-hash, duplicati, redirect, creazione e rollback MySQL con connessioni simulate.
-La connessione al database reale va verificata separatamente con credenziali locali.
+I test non si collegano ad Aiven: simulano l'accesso al database e bloccano
+le connessioni di rete. Dopo i test automatici, verifica la configurazione DB
+su un ambiente di test o in una finestra controllata.
 
-## Sicurezza e limiti
+## Produzione
 
-- Password salvate solo come hash; cookie firmato `HttpOnly`, `SameSite=Lax`,
-  durata 2 ore, `Secure` configurabile per HTTPS.
-- CSRF su tutti i POST, incluso logout; query SQL parametrizzate.
-- L'autore è ricavato dalla sessione: nessun campo `id_autore` nel form.
-- Account bloccati/cancellati esclusi dal login e ricontrollati a ogni richiesta.
-- Destinazioni `next` limitate a pagine interne note; HTML con escaping automatico.
-- Limite dei tentativi di login e registrazione. `memory://` è solo per sviluppo:
-  in produzione usa uno storage condiviso, ad esempio Redis, installando
-  `Flask-Limiter[redis]` e configurando `RATELIMIT_STORAGE_URI`.
-- Per pubblicare: server WSGI, HTTPS, `SESSION_COOKIE_SECURE=true`, debug disattivato,
-  chiave persistente condivisa fra i worker, gestione sicura dei segreti e backup.
-  Non fidarti di header proxy senza configurare il reverse proxy effettivamente usato.
+Usa HTTPS, server WSGI, `SESSION_COOKIE_SECURE=true`, `FLASK_DEBUG=0`, segreti
+persistenti e storage rate-limit condiviso (ad esempio Redis, con il relativo
+extra `Flask-Limiter`). `memory://` è adatto solo a sviluppo o test. Prevedi
+backup DB, retention degli allegati, scansione malware e monitoraggio. L'analisi
+IA non prende decisioni automatiche: i risultati devono restare soggetti a
+revisione umana.
 
-Non sono inclusi verifica email, recupero password, SPID/CIE, upload, moderazione,
-modifica profilo o dashboard personale: restano estensioni separate.
-La registrazione email/password non certifica l'identità reale di una persona.
-
-Per struttura delle rotte, modello dati, flusso e snippet commentati:
-[Architettura e autenticazione](docs/architettura.md).
-Per l'API JSON: [API](docs/api.md).
+La ricerca usa Nominatim pubblico solo dopo il click dell'utente (mai
+autocomplete), con limite globale configurato nello storage rate-limit e cache
+di processo. Mostra attribuzione OpenStreetMap. Per volumi elevati usa un
+geocoder/servizio tile dedicato o self-hosted e una cache condivisa, rispettando
+le condizioni del fornitore. La preferenza notifiche è salvata, ma non invia
+email finché non è integrato un servizio di consegna.

@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS UTENTE (
   Cognome VARCHAR(100) NOT NULL,
   Email VARCHAR(254) NOT NULL,
   HashPassword VARCHAR(255) NOT NULL,
+  Bio VARCHAR(500) NOT NULL DEFAULT '',
+  NotificheEmail BOOLEAN NOT NULL DEFAULT FALSE,
+  AvatarRiferimento VARCHAR(255) NULL,
+  SessionVersion INT UNSIGNED NOT NULL DEFAULT 0,
   DataRegistrazione DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   StatoAccount VARCHAR(30) NOT NULL DEFAULT 'attivo',
   DataCancellazione DATETIME NULL,
@@ -76,6 +80,7 @@ CREATE TABLE IF NOT EXISTS SEGNALAZIONE (
   CONSTRAINT chk_segnalazione_latitudine CHECK (Latitudine IS NULL OR Latitudine BETWEEN -90 AND 90),
   CONSTRAINT chk_segnalazione_longitudine CHECK (Longitudine IS NULL OR Longitudine BETWEEN -180 AND 180),
   INDEX idx_segnalazione_home (Visibilita, Stato, DataCreazione),
+  INDEX idx_segnalazione_coda (Visibilita, IdSegnalazione),
   INDEX idx_segnalazione_autore (IdAutore),
   INDEX idx_segnalazione_quartiere (IdQuartiere),
   INDEX idx_segnalazione_coordinate (Latitudine, Longitudine),
@@ -95,7 +100,7 @@ CREATE TABLE IF NOT EXISTS ALLEGATO (
   DataCaricamento DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_allegato_segnalazione FOREIGN KEY (IdSegnalazione) REFERENCES SEGNALAZIONE (IdSegnalazione),
   CONSTRAINT fk_allegato_autore FOREIGN KEY (IdAutore) REFERENCES UTENTE (IdUtente),
-  CONSTRAINT uq_allegato_riferimento UNIQUE (RiferimentoFile),
+  CONSTRAINT uq_allegato_riferimento UNIQUE (RiferimentoFile(768)),
   INDEX idx_allegato_segnalazione (IdSegnalazione)
 ) ENGINE=InnoDB;
 
@@ -258,3 +263,45 @@ LEFT JOIN SOSTEGNO so
  AND so.DataRitiro IS NULL
 WHERE s.Visibilita = 'pubblica'
 GROUP BY s.IdSegnalazione, s.Titolo, s.Tipo, s.Stato, s.IdQuartiere, s.DataCreazione;
+
+-- Le segnalazioni si inseriscono come bozze; la pubblicazione avviene
+-- nella stessa transazione dopo aver inserito almeno un allegato.
+DELIMITER //
+CREATE TRIGGER trg_segnalazione_prima_insert
+BEFORE INSERT ON SEGNALAZIONE FOR EACH ROW
+BEGIN
+  IF NEW.Visibilita = 'pubblica' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Pubblicare solo dopo aver inserito un allegato';
+  END IF;
+END//
+
+CREATE TRIGGER trg_segnalazione_prima_update
+BEFORE UPDATE ON SEGNALAZIONE FOR EACH ROW
+BEGIN
+  IF NEW.Visibilita = 'pubblica' AND OLD.Visibilita <> 'pubblica'
+     AND NOT EXISTS (SELECT 1 FROM ALLEGATO WHERE IdSegnalazione = OLD.IdSegnalazione) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Segnalazione senza allegato';
+  END IF;
+END//
+
+CREATE TRIGGER trg_allegato_prima_delete
+BEFORE DELETE ON ALLEGATO FOR EACH ROW
+BEGIN
+  IF EXISTS (SELECT 1 FROM SEGNALAZIONE
+             WHERE IdSegnalazione = OLD.IdSegnalazione AND Visibilita = 'pubblica')
+     AND (SELECT COUNT(*) FROM ALLEGATO WHERE IdSegnalazione = OLD.IdSegnalazione) <= 1 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Ultimo allegato di una segnalazione pubblica';
+  END IF;
+END//
+
+CREATE TRIGGER trg_allegato_prima_update
+BEFORE UPDATE ON ALLEGATO FOR EACH ROW
+BEGIN
+  IF NEW.IdSegnalazione <> OLD.IdSegnalazione
+     AND EXISTS (SELECT 1 FROM SEGNALAZIONE
+                 WHERE IdSegnalazione = OLD.IdSegnalazione AND Visibilita = 'pubblica')
+     AND (SELECT COUNT(*) FROM ALLEGATO WHERE IdSegnalazione = OLD.IdSegnalazione) <= 1 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Ultimo allegato di una segnalazione pubblica';
+  END IF;
+END//
+DELIMITER ;

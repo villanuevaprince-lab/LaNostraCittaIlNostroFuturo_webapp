@@ -1,27 +1,69 @@
 {% extends "base.html" %}
-{% from "_forms.html" import field, error_summary %}
-{% block title %}Nuova segnalazione — La Nostra Città{% endblock %}
+{% block scripts %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+  <script src="{{ url_for('static', filename='js/location.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/report.js') }}" defer></script>
+{% endblock %}
 {% block content %}
   <a class="back-link" href="/">← Torna alla bacheca</a>
   <section class="panel form-panel" aria-labelledby="report-title">
     <div>
       <p class="eyebrow">Il tuo contributo</p>
       <h1 id="report-title" class="page-title">Nuova segnalazione</h1>
-      <p>Descrivi il problema o proponi un miglioramento. Dopo l'invio tornerai alla bacheca.</p>
-      <p>Pubblicherai come <strong>{{ g.user.nome }} {{ g.user.cognome }}</strong>.</p>
-      <p class="mode-note">Non inserire password o dati sensibili: il contenuto sarà pubblico.</p>
+      <p>Descrivi il problema o la proposta, scegli il luogo e allega una prova. Potrai seguirla nella tua area personale.</p>
+      <p>Pubblicherai come <strong>{{ user.nome }} {{ user.cognome }}</strong>.</p>
+      <p class="mode-note">Il contenuto sarà pubblico subito dopo l'invio. Non caricare documenti con dati personali.</p>
+      <noscript><p class="mode-note">Attiva JavaScript per inviare il modulo.</p></noscript>
     </div>
-    <div>
-      {{ error_summary(form) }}
-      <form id="report-form" method="post" action="{{ url_for('reports.new_report') }}" data-submit-form>
-        {{ form.hidden_tag() }}
-        {{ field(form.tipo, required=true) }}
-        {{ field(form.titolo, minlength=3, maxlength=200, required=true) }}
-        {{ field(form.descrizione, minlength=10, maxlength=5000, rows=6, required=true) }}
-        {{ field(form.indirizzo, maxlength=255, autocomplete='street-address') }}
-        <button class="button" type="submit" data-busy-label="Pubblicazione in corso…">Pubblica</button>
-        <a class="back-link" href="/">Annulla e torna alla home</a>
-      </form>
-    </div>
+    <form id="report-form" method="post" action="{{ url_for('reports.post_report') }}"
+          enctype="multipart/form-data" data-report-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="field">Tipo
+        <select name="tipo" required>
+          <option value="">Seleziona</option>
+          <option value="segnalazione">Segnalazione</option>
+          <option value="proposta">Proposta</option>
+        </select>
+      </label>
+      <label class="field">Titolo
+        <input name="titolo" minlength="3" maxlength="200" required>
+      </label>
+      <label class="field">Descrizione
+        <textarea name="descrizione" minlength="10" maxlength="5000" rows="6" required></textarea>
+      </label>
+      <label class="field">Quartiere
+        <select name="quartiere_id" id="neighborhood-select" required>
+          <option value="">Caricamento quartieri…</option>
+        </select>
+      </label>
+      <fieldset class="category-fieldset">
+        <legend>Categorie (da 1 a 5)</legend>
+        <div id="category-options" class="tag-options">Caricamento categorie…</div>
+        <p class="hint">Seleziona tutte le categorie pertinenti.</p>
+      </fieldset>
+      <div class="location-picker">
+        <label class="field" for="location-search">Cerca il luogo a Milano
+          <input id="location-search" type="search" maxlength="120" placeholder="Via, piazza o zona">
+        </label>
+        <button id="location-search-button" class="button button-secondary" type="button">Cerca sulla mappa</button>
+        <p id="location-status" class="status" role="status">Cerca un indirizzo oppure scegli un punto sulla mappa.</p>
+        <div id="location-results" class="location-results" aria-label="Risultati indirizzo"></div>
+        <div id="location-map" class="map" role="region" aria-label="Mappa interattiva per scegliere il luogo"></div>
+        <p class="hint">Trascina il segnaposto per affinare la posizione. Se usi la tastiera, scegli un risultato dalla ricerca.</p>
+        <label class="field">Indirizzo selezionato o corretto da te
+          <input name="indirizzo" id="selected-address" maxlength="255" required autocomplete="street-address">
+        </label>
+        <input type="hidden" name="latitude" id="selected-latitude">
+        <input type="hidden" name="longitude" id="selected-longitude">
+      </div>
+      <label class="field">Foto o video (obbligatorio)
+        <input name="allegato" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
+      </label>
+      <small>Massimo 20 MB. Formati: JPEG, PNG, WebP, MP4 o WebM.</small>
+      <button class="button" type="submit">Pubblica contenuto</button>
+      <p data-form-status class="status" role="status" aria-live="polite"></p>
+      <a class="back-link" href="/">Annulla e torna alla home</a>
+    </form>
   </section>
 {% endblock %}
