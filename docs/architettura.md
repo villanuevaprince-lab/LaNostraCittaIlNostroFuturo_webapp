@@ -90,15 +90,18 @@ La migrazione `003_enforce_attachment_publication.sql` aggiunge i trigger che
 vietano la pubblicazione senza allegato e la rimozione dell'ultimo allegato
 pubblico; va applicata una volta dopo aver controllato i dati preesistenti.
 La migrazione `004_civic_features.sql` aggiunge le impostazioni profilo, la
-versione delle sessioni e l'indice per la coda paginata. Va applicata una volta
-prima di avviare questa release.
+versione delle sessioni e l'indice per la coda paginata. La migrazione
+`005_shared_attachment_content.sql` crea la tabella dei contenuti degli
+allegati, scritti a blocchi nella stessa transazione della segnalazione.
+Applica la 005 prima di avviare questa release; i file preesistenti vanno
+importati dal computer originario con `python -m backend.backfill_attachments`.
 Non eseguire la migrazione alla cieca su un database già aggiornato.
 
 Impostare in locale `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`,
-`DB_USER`, `DB_PASSWORD`, `DB_SSL_CA_PATH` e, se serve, `UPLOAD_FOLDER`.
+`DB_USER`, `DB_PASSWORD`, `DB_SSL_CA_PATH` e, per gli avatar, `UPLOAD_FOLDER`.
 Credenziali e certificati restano fuori da Git. L'app usa sempre MySQL;
-`APP_MODE=demo` non è supportato. Gli allegati restano su disco: serve un
-`UPLOAD_FOLDER` su volume persistente per conservarli fra installazioni.
+`APP_MODE=demo` non è supportato. Foto e video delle segnalazioni sono su
+MySQL; gli avatar e i vecchi allegati non ancora importati restano su disco.
 
 ## Limiti operativi
 

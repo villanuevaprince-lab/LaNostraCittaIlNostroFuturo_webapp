@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block scripts %}
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js" defer></script>
   <script src="{{ url_for('static', filename='js/location.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/report.js') }}" defer></script>
 {% endblock %}
@@ -50,7 +50,7 @@
         <p id="location-status" class="status" role="status">Cerca un indirizzo oppure scegli un punto sulla mappa.</p>
         <div id="location-results" class="location-results" aria-label="Risultati indirizzo"></div>
         <div id="location-map" class="map" role="region" aria-label="Mappa interattiva per scegliere il luogo"></div>
-        <p class="hint">Trascina il segnaposto per affinare la posizione. Se usi la tastiera, scegli un risultato dalla ricerca.</p>
+        <p class="hint">Trascina il segnaposto o spostalo con le frecce. Puoi anche scegliere un risultato dalla ricerca.</p>
         <label class="field">Indirizzo selezionato o corretto da te
           <input name="indirizzo" id="selected-address" maxlength="255" required autocomplete="street-address">
         </label>

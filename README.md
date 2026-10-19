@@ -15,7 +15,7 @@ commenti e sostegni sono salvati nel database.
   tendina (almeno una corrispondente) e stato; categorie come tag sulle schede.
 - Profilo con bio, quartiere di interesse, preferenza notifiche, avatar e cambio
   password verificato; modifica password invalida le altre sessioni.
-- Pagina dedicata con mappa Leaflet, ricerca indirizzo su richiesta, pin
+- Pagina dedicata con mappa MapLibre/OpenFreeMap, ricerca indirizzo su richiesta, pin
   trascinabile, selezione di 1–5 categorie, coordinate e indirizzo salvati in
   MySQL; foto/video obbligatorio. I nuovi contenuti sono pubblici dopo
   l'inserimento dell'allegato nella stessa transazione.
@@ -127,13 +127,33 @@ non deve essere eseguito sopra il DB Aiven popolato. Gli utenti del seed con
 con una nuova email. Per abilitare un moderatore, un amministratore DB deve
 aggiungere l'utente alla tabella `MODERATORE` dopo aver verificato l'ID.
 
-I file sono conservati in `storage/uploads/` rispetto alla radice del progetto,
-indipendentemente dalla directory di avvio, ed esclusi da Git. Per conservare
-anche foto e video dopo riavvii o nuove installazioni, configura `UPLOAD_FOLDER`
-su un volume persistente con backup. MySQL conserva i riferimenti ai file,
-non i byte degli allegati. Non condividere la cartella con altri servizi.
-Una futura migrazione a object storage deve mantenere i controlli MIME,
-dimensione, nomi casuali e autorizzazione alla lettura.
+### Foto condivise fra computer
+
+Prima di aggiornare l'app, esegui un backup Aiven. Applica poi la migrazione
+`005_shared_attachment_content.sql` **una volta sola** con le credenziali del
+tuo `.env`, senza installare `mysql.exe`:
+
+```powershell
+python -m backend.apply_media_migration
+```
+
+Esegui il comando dalla radice del repository. La migrazione crea la tabella
+`ALLEGATO_CONTENUTO`; i nuovi caricamenti salvano i byte in Aiven nella stessa
+transazione della segnalazione. Gli allegati storici sono ancora sul disco del
+computer dove furono caricati. **Su quel computer**, dopo la migrazione:
+
+```powershell
+python -m backend.backfill_attachments --source "."
+python -m backend.backfill_attachments --source "." --apply
+```
+
+Il primo comando è un'anteprima e mostra gli ID mancanti; il secondo importa
+i file. Se `UPLOAD_FOLDER` era personalizzato, usa il percorso effettivo della
+cartella con `--source`. Se i file originali non esistono più, il database
+contiene solo il loro riferimento e non può ricostruire le fotografie.
+Conserva un backup del vecchio `storage/uploads/` finché l'importazione e la
+visualizzazione da un altro computer non sono state verificate. L'avatar del
+profilo continua a usare il precedente `UPLOAD_FOLDER` locale.
 
 ## API principali
 

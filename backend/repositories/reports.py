@@ -1,7 +1,17 @@
+import hashlib
 import json
 
 from backend.database import database_cursor
 from datetime import datetime, timedelta
+
+MEDIA_CHUNK_BYTES = 256 * 1024
+
+
+def write_attachment_content(cursor, attachment_id, content):
+    """Chunk piccoli evitano query oltre il max_allowed_packet MySQL."""
+    for number, start in enumerate(range(0, len(content), MEDIA_CHUNK_BYTES)):
+        cursor.execute("""INSERT INTO ALLEGATO_CONTENUTO (IdAllegato, Numero, Dati)
+            VALUES (%s, %s, %s)""", (attachment_id, number, content[start:start + MEDIA_CHUNK_BYTES]))
 
 
 STATE_TRANSITIONS = {
@@ -32,6 +42,7 @@ def create_report_record(data, author, upload):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (report_id, author["id"], upload["mime"], upload["reference"],
              upload["original_name"], upload["size"], upload["sha256"], upload["accessible_description"]))
+        write_attachment_content(cursor, cursor.lastrowid, upload["content"])
         for category_id in data["categorie"]:
             cursor.execute("""INSERT INTO SEGNALAZIONE_CATEGORIA
                 (IdSegnalazione, IdCategoria, Origine) VALUES (%s, %s, 'utente')""",
@@ -438,6 +449,22 @@ def attachment_path(attachment_id, viewer_id=None, is_moderator=False):
             (attachment_id, viewer_id, int(is_moderator)))
         row = cursor.fetchone()
     return row["RiferimentoFile"] if row else None
+
+
+def attachment_content(attachment_id):
+    """Legge un allegato dal DB, senza dipendere dal disco di questo computer."""
+    with database_cursor() as cursor:
+        cursor.execute("""SELECT a.TipoMedia AS mime, a.DimensioneByte AS size,
+            a.HashSHA256 AS sha256, c.Dati AS data
+            FROM ALLEGATO a JOIN ALLEGATO_CONTENUTO c ON c.IdAllegato=a.IdAllegato
+            WHERE a.IdAllegato=%s ORDER BY c.Numero""", (attachment_id,))
+        parts = cursor.fetchall()
+    if not parts:
+        return None
+    content = b"".join(bytes(part["data"]) for part in parts)
+    if len(content) != parts[0]["size"] or hashlib.sha256(content).hexdigest() != parts[0]["sha256"]:
+        raise ValueError("Allegato corrotto")
+    return content, parts[0]["mime"]
 
 
 def user_supports(report_id, user_id):

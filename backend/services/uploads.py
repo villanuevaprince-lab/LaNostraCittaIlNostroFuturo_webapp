@@ -1,4 +1,4 @@
-"""Validazione e salvataggio locale degli allegati segnalazione."""
+"""Validazione degli allegati prima di salvarli nel database condiviso."""
 
 from io import BytesIO
 from pathlib import Path
@@ -68,15 +68,9 @@ def save_upload(file_storage, report_title):
     medium = "Foto" if mime in IMAGE_TYPES else "Video"
     description = f"{medium} allegato a: {report_title}"
 
-    root = Path(current_app.config["UPLOAD_FOLDER"]).resolve()
-    root.mkdir(mode=0o750, parents=True, exist_ok=True)
     filename = secrets.token_hex(24) + (IMAGE_TYPES | VIDEO_TYPES)[mime]
-    path = (root / filename).resolve()
-    if root not in path.parents:
-        raise UploadError("Percorso file non valido.")
-    path.write_bytes(raw)
     return {
-        "path": path, "reference": filename, "mime": mime,
+        "content": raw, "reference": filename, "mime": mime,
         "original_name": Path(file_storage.filename).name[:255],
         "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
         "accessible_description": description,
@@ -84,7 +78,8 @@ def save_upload(file_storage, report_title):
 
 
 def remove_upload(upload):
-    if upload:
+    # Compatibilità con eventuali vecchi upload temporanei; i nuovi restano in memoria.
+    if upload and upload.get("path"):
         try:
             Path(upload["path"]).unlink(missing_ok=True)
         except OSError:

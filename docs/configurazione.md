@@ -110,6 +110,7 @@ Se il database contiene solo le tabelle iniziali, applica nell'ordine:
 2. `database/seeds/001_reference_data.sql`
 3. controlla i dati e applica `database/migrations/003_enforce_attachment_publication.sql`
 4. `database/migrations/004_civic_features.sql`
+5. `database/migrations/005_shared_attachment_content.sql`
 
 Le migrazioni non sono completamente idempotenti: **non rilanciarle** se le
 colonne, gli indici o i trigger sono già presenti. In particolare la 004 deve
@@ -135,6 +136,26 @@ mysql --host=IL_TUO_HOST --port=LA_TUA_PORTA --user=IL_TUO_USER `
 
 Su Windows, se il carattere `<` non funziona nella shell utilizzata, apri lo
 script in MySQL Workbench o nel pannello SQL di Aiven e avvialo lì.
+
+Per la migrazione 005, usa direttamente Python dalla radice del progetto;
+`create_app()` carica il `.env` locale e la connessione verifica la CA Aiven:
+
+```powershell
+python -m backend.apply_media_migration
+```
+
+Esegui la 005 prima di avviare il codice aggiornato. Per recuperare le foto
+storiche, esegui sul computer che contiene ancora `storage/uploads/`:
+
+```powershell
+python -m backend.backfill_attachments --source "."
+python -m backend.backfill_attachments --source "." --apply
+```
+
+Il primo comando mostra quanti allegati sono recuperabili e gli ID dei file
+assenti. Il secondo li copia nel database condiviso. Per una cartella upload
+personalizzata, passa quella cartella con `--source`. Non eliminare i file
+originali prima di verificare le foto da un altro computer.
 
 ## 5. Creare il primo moderatore
 

@@ -9,7 +9,7 @@ from backend import database, users
 from backend.app import create_app
 from backend.repositories import catalog
 from backend.repositories.reports import (
-    create_report_record, get_report_record, list_moderation_users, list_report_records,
+    attachment_content, create_report_record, get_report_record, list_moderation_users, list_report_records,
     moderate_reports, permanently_ban_user, set_support, withdraw_report,
 )
 
@@ -36,6 +36,7 @@ def upload_payload():
     return {
         "mime": "image/jpeg", "reference": "random.jpg", "original_name": "foto.jpg",
         "size": 42, "sha256": "a" * 64, "accessible_description": "Lampione spento",
+        "content": b"a" * 42,
     }
 
 
@@ -107,12 +108,24 @@ def test_publication_follows_attachment_insert_in_one_transaction(fake_mysql):
     assert "'bozza'" in queries[0]
     assert cursor.execute.call_args_list[0].args[1][0] == 9
     assert "INSERT INTO ALLEGATO" in queries[1]
+    assert "INSERT INTO ALLEGATO_CONTENUTO" in queries[2]
     attachment_index = next(index for index, sql in enumerate(queries) if "INSERT INTO ALLEGATO" in sql)
     publish_index = next(index for index, sql in enumerate(queries) if "SET Visibilita='pubblica'" in sql)
     assert publish_index > attachment_index
     assert result["visibilita"] == "pubblica"
     assert result["id"] == 42
     connection.commit.assert_called_once()
+
+
+def test_shared_attachment_bytes_are_read_from_database(fake_mysql):
+    import hashlib
+    _, cursor = fake_mysql
+    content = b"foto condivisa"
+    metadata = {"mime": "image/jpeg", "size": len(content),
+                "sha256": hashlib.sha256(content).hexdigest()}
+    cursor.fetchall.return_value = [dict(metadata, data=content[:4]), dict(metadata, data=content[4:])]
+    assert attachment_content(4) == (content, "image/jpeg")
+    assert "ORDER BY c.Numero" in cursor.execute.call_args.args[0]
 
 
 def test_publication_db_failure_rolls_back(fake_mysql):

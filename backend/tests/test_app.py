@@ -1,5 +1,6 @@
 """Flussi HTTP senza connessioni reali; query e commit sono testati a parte."""
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import Mock
 
 from PIL import Image
@@ -129,7 +130,8 @@ def test_report_publication_passes_session_author(client, logged_in, report_data
     assert response.status_code == 201 and response.get_json()["redirect"] == "/dashboard"
     data, author, upload = insert.call_args.args
     assert author["id"] == 101 and str(data["latitude"]) == "45.464200" and str(data["longitude"]) == "9.190000"
-    assert upload["path"].is_file()
+    assert upload["content"].startswith(b"\xff\xd8\xff")
+    assert not list(Path(client.application.config["UPLOAD_FOLDER"]).glob("*.jpg"))
     assert "Contenuto pubblicato." in client.get("/").get_data(as_text=True)
 
 
@@ -159,6 +161,15 @@ def test_report_rejects_duplicate_categories(client, logged_in, report_data):
         headers={"X-CSRFToken": csrf_token(client)}, content_type="multipart/form-data")
     assert response.status_code == 400
     assert "distinte" in response.get_json()["error"]
+
+
+def test_attachment_is_served_from_shared_database(client, monkeypatch):
+    from backend import reports
+    monkeypatch.setattr(reports, "attachment_path", lambda *args: "photo.jpg")
+    monkeypatch.setattr(reports, "attachment_content", lambda attachment_id: (b"image bytes", "image/jpeg"))
+    response = client.get("/api/allegati/9")
+    assert response.status_code == 200
+    assert response.data == b"image bytes" and response.mimetype == "image/jpeg"
 
 
 def test_report_rejects_out_of_city_coordinates(client, logged_in, report_data, monkeypatch):

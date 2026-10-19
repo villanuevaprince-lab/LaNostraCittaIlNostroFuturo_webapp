@@ -1,10 +1,11 @@
 from pathlib import Path
+from io import BytesIO
 
 from flask import Blueprint, current_app, flash, g, jsonify, redirect, render_template, request, send_file
 from mysql.connector import IntegrityError
 
 from backend.repositories.reports import (
-    add_comment, attachment_path, block_user, change_report_state, get_report_record,
+    add_comment, attachment_content, attachment_path, block_user, change_report_state, get_report_record,
     list_moderation_reports, list_moderation_users, list_report_records,
     moderate_comment, moderate_report, moderate_reports, permanently_ban_user,
     report_comments, STATE_TRANSITIONS,
@@ -297,7 +298,20 @@ def get_attachment(attachment_id):
     reference = attachment_path(attachment_id, g.user["id"] if g.user else None,
                                 bool(g.user and g.user["is_moderator"]))
     if not reference or Path(reference).name != reference:
-        return jsonify(error="Allegato non trovato."), 404
+        # I percorsi legacy sono letti dal DB dopo il backfill, senza usarli come path locali.
+        if not reference:
+            return jsonify(error="Allegato non trovato."), 404
+    try:
+        stored = attachment_content(attachment_id)
+    except ValueError:
+        current_app.logger.error("Contenuto allegato %s non valido", attachment_id)
+        return jsonify(error="Allegato non disponibile."), 503
+    if stored:
+        content, mime = stored
+        return send_file(BytesIO(content), mimetype=mime, conditional=True,
+                         as_attachment=not mime.startswith(("image/", "video/")), max_age=3600)
+    if Path(reference).name != reference:
+        return jsonify(error="Allegato legacy non ancora importato dal computer originale."), 404
     root = Path(current_app.config["UPLOAD_FOLDER"]).resolve()
     path = (root / reference).resolve()
     if root not in path.parents or not path.is_file():

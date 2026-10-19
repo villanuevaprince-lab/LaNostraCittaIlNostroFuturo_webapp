@@ -106,7 +106,8 @@ def create_app(test_config=None):
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
             "script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com; "
-            "img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org"
+            "worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org; "
+            "img-src 'self' data: https://tiles.openfreemap.org"
         )
         if request.endpoint != "static":
             response.headers["Cache-Control"] = "no-store"
