@@ -7,6 +7,7 @@ const userSearch = document.querySelector("#user-search");
 const usersStatus = document.querySelector("#users-status");
 const selected = new Set();
 let reportCursor = null;
+const loadedReportIds = new Set();
 let userCursor = null;
 let loadingReports = false;
 let queueGeneration = 0;
@@ -143,21 +144,30 @@ function renderReport(report, states) {
 async function loadReports(reset = false) {
   if (reset) {
     queueGeneration += 1;
-    reportCursor = null; reportRoot.replaceChildren(); selected.clear(); selectionChanged();
+    reportCursor = null; loadedReportIds.clear(); reportRoot.replaceChildren();
+    selected.clear(); selectionChanged();
   }
   if (loadingReports) { if (reset) pendingReset = true; return; }
   loadingReports = true;
   const generation = queueGeneration;
+  const requestedCursor = reportCursor;
   status.textContent = "Caricamento coda…";
   try {
-    const params = new URLSearchParams({ visibilita: filter.value, limit: "25" });
+    const params = new URLSearchParams({ vista: filter.value, limit: "25" });
     if (reportCursor) params.set("cursor", reportCursor);
     const [page, states] = await Promise.all([
       requestJSON(`/api/moderazione/coda?${params}`), requestJSON("/api/stati"),
     ]);
     if (generation !== queueGeneration) return;
-    page.items.forEach((item) => reportRoot.append(renderReport(item, states)));
-    reportCursor = page.next_cursor;
+    const freshItems = page.items.filter((item) => !loadedReportIds.has(item.id));
+    freshItems.forEach((item) => {
+      loadedReportIds.add(item.id);
+      reportRoot.append(renderReport(item, states));
+    });
+    // Evita richieste infinite se un proxy/API restituisce la stessa pagina o
+    // un cursore non avanzato.
+    reportCursor = page.next_cursor && page.next_cursor !== requestedCursor && freshItems.length
+      ? page.next_cursor : null;
     document.querySelector("#moderation-next").hidden = !reportCursor;
     status.textContent = reportRoot.children.length ? "Coda aggiornata." : "Nessun contenuto in questa vista.";
     selectionChanged();

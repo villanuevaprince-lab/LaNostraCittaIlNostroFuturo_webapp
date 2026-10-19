@@ -9,7 +9,8 @@ from backend import database, users
 from backend.app import create_app
 from backend.repositories import catalog
 from backend.repositories.reports import (
-    attachment_content, create_report_record, get_report_record, list_moderation_users, list_report_records,
+    attachment_content, create_report_record, get_report_record, list_moderation_reports,
+    list_moderation_users, list_report_records,
     moderate_reports, permanently_ban_user, set_support, withdraw_report,
 )
 
@@ -186,6 +187,24 @@ def test_user_search_is_parameterized_and_includes_block_type(fake_mysql):
     assert "permanente" in sql and "u.Email" in sql
     assert params[3] == "a!%!_!!%"
     assert page["items"][0]["blocco_fine"] == "2026-11-01T00:00:00"
+
+
+def test_moderation_queue_uses_state_and_stops_cursor_at_last_page(fake_mysql):
+    _, cursor = fake_mysql
+    rows = [
+        {"id": 9, "data_creazione": datetime(2026, 9, 29)},
+        {"id": 8, "data_creazione": datetime(2026, 9, 28)},
+        {"id": 7, "data_creazione": datetime(2026, 9, 27)},
+    ]
+    cursor.fetchall.return_value = rows
+    page = list_moderation_reports(20, "in_lavorazione", 2)
+    sql, params = cursor.execute.call_args.args
+    assert "s.Visibilita <> 'rimossa' AND s.Stato=%s" in sql
+    assert params == ("in_lavorazione", 20, 20, 3)
+    assert page["next_cursor"] == 8
+
+    cursor.fetchall.return_value = []
+    assert list_moderation_reports(8, "in_lavorazione", 2)["next_cursor"] is None
 
 
 def test_permanent_ban_preserves_prior_block_and_audits(fake_mysql):

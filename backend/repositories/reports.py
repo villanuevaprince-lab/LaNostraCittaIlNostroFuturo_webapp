@@ -280,22 +280,34 @@ def withdraw_report(report_id, author_id):
 
 
 def list_moderation_reports(cursor_id=None, visibility="pubblica", limit=25):
+    # La coda è organizzata per stato operativo. "rimossa" resta una vista
+    # speciale che raccoglie tutti i contenuti eliminati dai moderatori/autori.
+    if visibility == "rimossa":
+        visibility_clause = "s.Visibilita='rimossa'"
+        visibility_params = []
+    elif visibility in STATE_TRANSITIONS:
+        visibility_clause = "s.Visibilita <> 'rimossa' AND s.Stato=%s"
+        visibility_params = [visibility]
+    else:
+        # Compatibilità con eventuali client precedenti alla vista per stato.
+        visibility_clause = "s.Visibilita=%s"
+        visibility_params = [visibility]
     with database_cursor() as cursor:
-        cursor.execute("""SELECT s.IdSegnalazione AS id, s.Titolo AS titolo, s.Tipo AS tipo,
+        query = """SELECT s.IdSegnalazione AS id, s.Titolo AS titolo, s.Tipo AS tipo,
             s.Stato AS stato, s.Visibilita AS visibilita, s.DataCreazione AS data_creazione,
             CONCAT(u.Nome, ' ', u.Cognome) AS autore, u.IdUtente AS autore_id,
             (SELECT COUNT(*) FROM EVENTO_LOG e WHERE e.IdSegnalazione=s.IdSegnalazione
              AND e.TipoAzione='ritiro_segnalazione') AS ritirata_autore
             FROM SEGNALAZIONE s JOIN UTENTE u ON u.IdUtente=s.IdAutore
-            WHERE s.Visibilita=%s AND (%s IS NULL OR s.IdSegnalazione < %s)
-            ORDER BY s.IdSegnalazione DESC LIMIT %s""",
-            (visibility, cursor_id, cursor_id, limit + 1))
+            WHERE """ + visibility_clause + """ AND (%s IS NULL OR s.IdSegnalazione < %s)
+            ORDER BY s.IdSegnalazione DESC LIMIT %s"""
+        cursor.execute(query, (*visibility_params, cursor_id, cursor_id, limit + 1))
         rows = cursor.fetchall()
     more = len(rows) > limit
     rows = rows[:limit]
     for row in rows:
         row["data_creazione"] = row["data_creazione"].isoformat(timespec="seconds")
-    return {"items": rows, "next_cursor": rows[-1]["id"] if more else None}
+    return {"items": rows, "next_cursor": rows[-1]["id"] if more and rows else None}
 
 
 def list_moderation_users(cursor_id=None, limit=25, search=""):

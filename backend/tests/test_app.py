@@ -221,6 +221,16 @@ def test_deleted_moderation_view_is_role_protected(client, logged_in, monkeypatc
     assert queue.call_args.args == (None, "rimossa", 25)
 
 
+def test_moderation_view_can_filter_by_report_state(client, logged_in, monkeypatch):
+    from backend import reports, users
+    monkeypatch.setattr(users, "has_role", lambda user_id, role="moderatore": True)
+    queue = Mock(return_value={"items": [], "next_cursor": None})
+    monkeypatch.setattr(reports, "list_moderation_reports", queue)
+    response = client.get("/api/moderazione/coda?vista=in_lavorazione")
+    assert response.status_code == 200
+    assert queue.call_args.args == (None, "in_lavorazione", 25)
+
+
 def test_comments_and_support_use_repository(client, logged_in, monkeypatch):
     from backend import reports
     monkeypatch.setattr(reports, "get_report_record", lambda _: {"id": 1, "visibilita": "pubblica"})
