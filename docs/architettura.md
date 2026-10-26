@@ -98,7 +98,7 @@ importati dal computer originario con `python -m backend.backfill_attachments`.
 Non eseguire la migrazione alla cieca su un database già aggiornato.
 
 Impostare in locale `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`,
-`DB_USER`, `DB_PASSWORD`, `DB_SSL_CA_PATH` e, per gli avatar, `UPLOAD_FOLDER`.
+`DB_USER`, `DB_PASSWORD`, `DB_SSL_CA` e, per gli avatar, `UPLOAD_FOLDER`.
 Credenziali e certificati restano fuori da Git. L'app usa sempre MySQL;
 `APP_MODE=demo` non è supportato. Foto e video delle segnalazioni sono su
 MySQL; gli avatar e i vecchi allegati non ancora importati restano su disco.

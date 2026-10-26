@@ -1,6 +1,8 @@
 """Pool MySQL Aiven, transazioni e verifica TLS; nessuna migrazione automatica."""
 
 import os
+import hashlib
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
@@ -13,14 +15,28 @@ from flask import current_app
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
+def _get_ssl_ca_path():
+    ca_content = os.getenv("DB_SSL_CA", "").strip()
+    if ca_content:
+        ca_content = ca_content.replace("\\n", "\n")
+        ca_path = Path(tempfile.gettempdir()) / (
+            f"nostra-citta-ca-{hashlib.sha256(ca_content.encode()).hexdigest()}.pem"
+        )
+        if not ca_path.exists():
+            ca_path.write_text(ca_content + "\n", encoding="utf-8")
+        return ca_path
+    configured_path = os.getenv("DB_SSL_CA_PATH", "certificates/ca.pem")
+    return ROOT_DIR / configured_path
+
+
 def get_connection():
     required = ("DB_HOST", "DB_USER", "DB_PASSWORD")
     if any(not os.getenv(key) or os.getenv(key, "").startswith("replace-with") for key in required):
         raise mysql.connector.InterfaceError("Configurazione MySQL incompleta.")
-    ca_path = ROOT_DIR / os.getenv("DB_SSL_CA_PATH", "certificates/ca.pem")
+    ca_path = _get_ssl_ca_path()
     if not ca_path.is_file():
         # Non degradare silenziosamente a una connessione senza verifica TLS.
-        raise mysql.connector.InterfaceError("Certificato CA MySQL mancante.")
+        raise mysql.connector.InterfaceError("Certificato CA MySQL mancante: imposta DB_SSL_CA.")
     try:
         port = int(os.getenv("DB_PORT", "3306"))
         pool_size = int(os.getenv("DB_POOL_SIZE", "5"))

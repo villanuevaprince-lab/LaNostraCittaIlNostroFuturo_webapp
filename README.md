@@ -62,7 +62,7 @@ source .venv/bin/activate
 python -m pip install -r backend/requirements.txt
 cp .env.example .env
 # Compila .env con SECRET_KEY, DB_HOST, DB_PORT, DB_USER e DB_PASSWORD;
-# copia il certificato CA Aiven in certificates/ca.pem.
+# inserisci il contenuto del certificato CA Aiven nella variabile DB_SSL_CA.
 python -m backend.app
 ```
 
@@ -78,7 +78,7 @@ Rimuovi `APP_MODE=demo` da eventuali vecchi `.env`: non è più supportato.
 
 1. Crea `.env` copiando `.env.example`; `.env` è escluso da Git.
 2. Imposta una `SECRET_KEY` casuale di almeno 32 caratteri,
-   i parametri `DB_*` e `DB_SSL_CA_PATH`. Inserisci localmente le credenziali.
+  i parametri `DB_*` e il contenuto PEM di `DB_SSL_CA`. Inserisci localmente le credenziali.
 3. Verifica lo schema reale e crea un backup prima di qualsiasi DDL.
 4. Se il DB contiene solo lo schema iniziale, applica **una sola volta**
    `database/migrations/002_extend_existing_schema.sql`; poi applica

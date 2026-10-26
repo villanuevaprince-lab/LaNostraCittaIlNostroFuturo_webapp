@@ -302,6 +302,7 @@ def test_missing_ca_fails_closed(app, monkeypatch, tmp_path):
     monkeypatch.setenv("DB_HOST", "example.invalid")
     monkeypatch.setenv("DB_USER", "test")
     monkeypatch.setenv("DB_PASSWORD", "test-only")
+    monkeypatch.delenv("DB_SSL_CA", raising=False)
     monkeypatch.setenv("DB_SSL_CA_PATH", str(tmp_path / "missing.pem"))
     with app.app_context(), pytest.raises(mysql.connector.InterfaceError, match="CA"):
         database.get_connection()

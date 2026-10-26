@@ -38,13 +38,11 @@ information**:
 - database/schema;
 - certificato CA.
 
-Scarica il certificato CA Aiven e salvalo nel repository con questo percorso:
+Scarica il certificato CA Aiven. Salva il suo contenuto nella variabile d'ambiente
+`DB_SSL_CA` (su Vercel incollalo come variabile multilinea). Il fallback locale
+`DB_SSL_CA_PATH` resta disponibile per compatibilita, ma non e necessario.
 
-```text
-certificates/ca.pem
-```
-
-Il file CA e le credenziali sono privati: non devono essere caricati su GitHub.
+Il certificato CA e le credenziali sono privati: non devono essere caricati su GitHub.
 Il programma rifiuta la connessione se il certificato manca o se la verifica TLS
 non è possibile.
 
@@ -72,7 +70,7 @@ DB_POOL_SIZE=5
 DB_USER=avnadmin
 DB_PASSWORD=la-password-di-aiven
 DB_NAME=nostra_citta
-DB_SSL_CA_PATH=certificates/ca.pem
+DB_SSL_CA=-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----
 ```
 
 Genera una chiave sicura senza scriverla nel repository:
