@@ -396,3 +396,22 @@ nav a:hover, .report-card a:hover, .moderation-row a:hover { text-decoration: un
 @media (max-width: 480px) {
   .filter-row { grid-template-columns: 1fr; }
 }
+
+/* Stati distinguibili anche dal testo, senza dipendere dal solo colore. */
+.state-badge[data-state="inviata"] { background:#e8eef8; color:#233f70; }
+.state-badge[data-state="presa_in_carico"] { background:#eee9f6; color:#513276; }
+.state-badge[data-state="in_lavorazione"] { background:#fff0cc; color:#674600; }
+.state-badge[data-state="risolta"], .state-badge[data-state="approvata"] { background:#ddefe5; color:#185035; }
+.state-badge[data-state="archiviata"] { background:#f4e1e1; color:#772b2b; }
+.state-badge[data-state="in_valutazione"] { background:#e2eef0; color:#22525b; }
+.comparison-images { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.5rem; }
+.comparison-images figure { margin:0; }
+.comparison-images figcaption { font-weight:700; margin-bottom:.75rem; }
+.comparison-images img { width:100%; height:auto; border-radius:.3rem; }
+@media (max-width:600px) { .comparison-images { grid-template-columns:1fr; } }
+
+/* Discussioni: indentazione limitata per restare leggibili su telefono. */
+.thread-level-1 { margin-left:1rem; border-left:2px solid #cbd5e1; padding-left:.75rem; }
+.thread-level-2, .thread-level-3 { margin-left:2rem; border-left:2px solid #cbd5e1; padding-left:.75rem; }
+.comment-item > a { display:block; margin-block:.4rem; }
+.comment-item > button { margin:.25rem .4rem .25rem 0; }

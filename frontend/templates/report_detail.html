@@ -19,7 +19,23 @@
       <div>
         <h2>Descrizione</h2><p id="detail-description" class="pre-wrap"></p>
         <div id="detail-media"></div>
-        <h2>Discussione</h2><ul id="detail-comments" class="comment-list"></ul>
+        <section id="resolution-comparison" hidden aria-label="Confronto prima e dopo">
+          <h2>Intervento completato: prima e dopo</h2>
+          <p id="resolution-description"></p>
+          <div id="comparison-images" class="comparison-images"></div>
+        </section>
+        <p id="proposal-progress" hidden></p>
+        {% if g.user and g.user.is_moderator %}
+        <form id="resolution-form" hidden enctype="multipart/form-data">
+          <h2>Documenta l'intervento</h2>
+          <p class="hint">Carica la foto finale, poi imposta lo stato Risolta in moderazione.</p>
+          <label class="field">Descrizione dell'intervento<textarea name="risoluzione" required minlength="3" maxlength="3000"></textarea></label>
+          <label class="field">Foto dopo l'intervento<input name="allegato" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+          <button class="button" type="submit">Salva intervento</button>
+          <p class="status" role="status" data-resolution-status></p>
+        </form>
+        {% endif %}
+        <h2>Discussione</h2><div id="detail-comments"></div>
       </div>
       <aside>
         <h2>Luogo</h2><p id="detail-address"></p>

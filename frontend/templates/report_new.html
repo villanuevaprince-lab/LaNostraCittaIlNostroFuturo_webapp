@@ -26,6 +26,10 @@
           <option value="proposta">Proposta</option>
         </select>
       </label>
+      <label class="field" id="proposal-threshold" hidden>Obiettivo di sostegni della proposta
+        <input type="number" name="soglia_sostegni" min="1" max="1000000" value="100" disabled>
+      </label>
+      <p class="hint" id="content-type-hint">Segnalazione: un disservizio da risolvere. Proposta: un'idea da discutere e sostenere.</p>
       <label class="field">Titolo
         <input name="titolo" minlength="3" maxlength="200" required>
       </label>

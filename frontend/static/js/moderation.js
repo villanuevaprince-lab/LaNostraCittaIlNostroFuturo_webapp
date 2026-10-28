@@ -9,6 +9,7 @@ const selected = new Set();
 let reportCursor = null;
 const loadedReportIds = new Set();
 let userCursor = null;
+const loadedUserIds = new Set();
 let loadingReports = false;
 let queueGeneration = 0;
 let pendingReset = false;
@@ -107,7 +108,8 @@ function renderReport(report, states) {
     ? report.ritirata_autore ? "ritirata dall'autore" : "rimossa dai moderatori"
     : report.visibilita;
   meta.textContent = `${report.tipo} · ${report.autore} · ${report.data_creazione.slice(0, 10)} · ${visibilityLabel}`;
-  body.append(heading, meta);
+  const badge = document.createElement("span"); setStateBadge(badge, report);
+  body.append(heading, badge, meta);
   const controls = document.createElement("div"); controls.className = "toolbar";
   if (report.visibilita !== "pubblica" && !check.disabled) controls.append(button(
     report.visibilita === "rimossa" ? "Reinserisci" : "Approva", "button",
@@ -117,24 +119,37 @@ function renderReport(report, states) {
   if (report.visibilita === "pubblica") controls.append(button(
     "Nascondi", "button button-secondary", () => action([report.id], "nascondi")));
   controls.append(button("Blocca autore", "button button-secondary", () => blockUser(report.autore_id, report.autore)));
+  if (report.duplicate_of_id) {
+    const note = document.createElement("a"); note.href = `/reports/${report.duplicate_of_id}`; note.textContent = `Unita al contenuto #${report.duplicate_of_id}`; controls.append(note);
+  }
   const stateDefinition = states.find((item) => item.codice === report.stato);
   const stateLabel = document.createElement("label"); stateLabel.className = "state-control";
   stateLabel.textContent = "Stato";
   const stateSelect = document.createElement("select");
-  const allowed = [report.stato, ...(stateDefinition?.prossimi || [])];
+  const allowed = [report.stato, ...(stateDefinition?.prossimi || []).filter((code) => states.find((s) => s.codice === code)?.tipi.includes(report.tipo))];
   allowed.forEach((code) => {
     const state = states.find((item) => item.codice === code);
     stateSelect.add(new Option(state?.etichetta || code.replaceAll("_", " "), code));
   });
   stateSelect.value = report.stato;
-  stateSelect.disabled = allowed.length < 2;
+  stateSelect.disabled = Boolean(report.duplicate_of_id) || allowed.length < 2;
   stateLabel.append(stateSelect);
   controls.append(stateLabel, button("Cambia stato", "button button-secondary", async () => {
-    if (stateSelect.value === report.stato) return;
+    if (report.duplicate_of_id || stateSelect.value === report.stato) return;
     try {
       await requestJSON(`/api/segnalazioni/${report.id}/stato`, "PATCH", { stato: stateSelect.value });
       await loadReports(true);
       status.textContent = `Stato aggiornato per «${report.titolo}».`;
+    } catch (error) { status.textContent = error.message; }
+  }));
+  if (report.visibilita === "pubblica" && !report.duplicate_of_id) controls.append(button("Unisci duplicato", "button button-secondary", async () => {
+    const target = window.prompt("ID del contenuto principale dello stesso tipo (i sostegni saranno deduplicati e i commenti trasferiti):");
+    if (!target) return;
+    const reason = window.prompt("Motivazione dell'unione:");
+    if (!reason) return;
+    try {
+      await requestJSON(`/api/moderazione/segnalazioni/${report.id}/duplicato`, "POST", { duplicate_of_id: Number(target), motivazione: reason });
+      await loadReports(true); status.textContent = "Duplicato unito al contenuto principale.";
     } catch (error) { status.textContent = error.message; }
   }));
   row.append(check, body, controls);
@@ -216,12 +231,15 @@ function renderUser(user) {
 
 async function loadUsers(reset = false) {
   if (reset) {
-    userGeneration += 1; userCursor = null; userRoot.replaceChildren();
+    userGeneration += 1; userCursor = null; loadedUserIds.clear(); userRoot.replaceChildren();
     document.querySelector("#users-next").hidden = true;
   }
   if (loadingUsers) { if (reset) pendingUserReset = true; return; }
+  if (!reset && loadedUserIds.size && userCursor === null) return;
   loadingUsers = true;
   const generation = userGeneration;
+  const requestedCursor = userCursor;
+  document.querySelector("#users-next").disabled = true;
   usersStatus.textContent = "Caricamento utenti…";
   try {
     const params = new URLSearchParams();
@@ -229,13 +247,17 @@ async function loadUsers(reset = false) {
     if (userSearch.value.trim()) params.set("q", userSearch.value.trim());
     const page = await requestJSON(`/api/moderazione/utenti?${params}`);
     if (generation !== userGeneration) return;
-    page.items.forEach((item) => userRoot.append(renderUser(item)));
-    userCursor = page.next_cursor;
+    const fresh = page.items.filter((item) => !loadedUserIds.has(Number(item.id)));
+    fresh.forEach((item) => { loadedUserIds.add(Number(item.id)); userRoot.append(renderUser(item)); });
+    const candidate = Number(page.next_cursor);
+    userCursor = fresh.length && Number.isSafeInteger(candidate) && candidate > 0 &&
+      (requestedCursor === null || candidate < requestedCursor) ? candidate : null;
     document.querySelector("#users-next").hidden = !userCursor;
     usersStatus.textContent = userRoot.children.length ? `${userRoot.children.length} utenti mostrati.` : "Nessun utente trovato.";
   } catch (error) { usersStatus.textContent = error.message; }
   finally {
     loadingUsers = false;
+    document.querySelector("#users-next").disabled = false;
     if (pendingUserReset) { pendingUserReset = false; loadUsers(); }
   }
 }

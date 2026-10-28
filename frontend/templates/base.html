@@ -8,9 +8,12 @@
   <title>{% block title %}La Nostra Città, Il Nostro Futuro{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <script src="{{ url_for('static', filename='js/forms.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/lifecycle.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/discussion.js') }}" defer></script>
+  {% if g.user %}<script src="{{ url_for('static', filename='js/notifications.js') }}" defer></script>{% endif %}
   {% block scripts %}{% endblock %}
 </head>
-<body>
+<body data-user-id="{{ g.user.id if g.user else '' }}" data-moderator="{{ 'true' if g.user and g.user.is_moderator else 'false' }}">
   <a class="skip-link" href="#main">Vai al contenuto</a>
   <header class="site-header">
     <div class="brand-group">
@@ -22,6 +25,7 @@
       <a class="nav-link" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
       {% if g.user %}
         <span class="nav-user">Ciao, {{ g.user.nome }}</span>
+        <a class="nav-link" href="/notifiche">Notifiche <span id="notification-count" aria-label="Notifiche non lette"></span></a>
         <a class="nav-link" href="{{ url_for('pages.profile') }}">Profilo</a>
         <a class="nav-link" href="{{ url_for('pages.dashboard') }}">Dashboard</a>
         {% if g.user.is_moderator %}<a class="nav-link" href="{{ url_for('pages.moderation') }}">Moderazione</a>{% endif %}

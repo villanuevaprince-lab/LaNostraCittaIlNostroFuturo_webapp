@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Notifiche — La Nostra Città{% endblock %}
+{% block content %}
+<section class="panel" id="notification-inbox">
+  <p class="eyebrow">La tua attività</p><h1>Notifiche</h1>
+  <p>Risposte, commenti, sostegni e aggiornamenti dei tuoi contenuti.</p>
+  <p id="notifications-status" class="status" role="status"></p>
+  <ul id="notification-list" class="comment-list"></ul>
+  <button id="notification-next" class="button button-secondary" type="button" hidden>Carica altre notifiche</button>
+</section>
+{% endblock %}

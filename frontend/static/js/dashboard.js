@@ -61,7 +61,9 @@ function createCard(report) {
   meta.textContent = [report.tipo, report.quartiere || report.indirizzo,
     report.stato?.replaceAll("_", " "), report.data_creazione?.slice(0, 10)]
     .filter(Boolean).join(" · ");
-  card.append(badge, heading, description, meta);
+  const stateBadge = document.createElement("span");
+  setStateBadge(stateBadge, report);
+  card.append(badge, stateBadge, heading, description, meta);
   if (report.categorie?.length) {
     const tags = document.createElement("div"); tags.className = "tag-list";
     report.categorie.forEach((category) => {
@@ -69,6 +71,9 @@ function createCard(report) {
       tag.textContent = category.nome; tags.append(tag);
     });
     card.append(tags);
+  }
+  if (report.duplicate_of_id) {
+    const note = document.createElement("p"); note.textContent = `Unita al contenuto #${report.duplicate_of_id}`; card.append(note);
   }
   if (report.visibilita !== "rimossa") {
     const action = document.createElement("button"); action.type = "button";
