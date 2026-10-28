@@ -2,6 +2,7 @@ import hashlib
 import json
 
 from backend.database import database_cursor
+from backend.repositories.notifications import notify
 from datetime import datetime, timedelta
 
 MEDIA_CHUNK_BYTES = 256 * 1024
@@ -167,25 +168,38 @@ def get_report_record(report_id):
 
 def report_comments(report_id):
     with database_cursor() as cursor:
-        cursor.execute("""SELECT c.IdCommento AS id, c.Testo AS testo,
-            c.DataPubblicazione AS data, CONCAT(u.Nome, ' ', u.Cognome) AS autore
+        cursor.execute("""SELECT c.IdCommento AS id, c.IdCommentoPadre AS parent_id,
+            c.Visibilita AS visibilita, c.IdAutore AS autore_id,
+            CASE WHEN c.Visibilita='pubblica' THEN c.Testo ELSE 'Commento eliminato o rimosso' END AS testo,
+            c.DataPubblicazione AS data, CASE WHEN c.Visibilita='pubblica' THEN CONCAT(u.Nome, ' ', u.Cognome) ELSE '' END AS autore
             FROM COMMENTO c JOIN UTENTE u ON u.IdUtente=c.IdAutore
-            WHERE c.IdSegnalazione=%s AND c.Visibilita='pubblica' ORDER BY c.DataPubblicazione""", (report_id,))
+            WHERE c.IdSegnalazione=%s ORDER BY c.IdCommento""", (report_id,))
         rows = cursor.fetchall()
     for row in rows:
         row["data"] = row["data"].isoformat(timespec="seconds")
     return rows
 
 
-def add_comment(report_id, user_id, text):
+def add_comment(report_id, user_id, text, parent_id=None):
     with database_cursor(write=True) as cursor:
-        cursor.execute("SELECT Visibilita, duplicate_of_id FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+        cursor.execute("SELECT Visibilita, duplicate_of_id, IdAutore FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
         report = cursor.fetchone()
         if not report or report["Visibilita"] != "pubblica" or report.get("duplicate_of_id"):
             return None
-        cursor.execute("INSERT INTO COMMENTO (IdAutore, IdSegnalazione, Testo, Visibilita) VALUES (%s, %s, %s, 'pubblica')",
-                       (user_id, report_id, text))
+        parent = None
+        if parent_id is not None:
+            cursor.execute("SELECT IdAutore, IdSegnalazione, Visibilita FROM COMMENTO WHERE IdCommento=%s FOR UPDATE", (parent_id,))
+            parent = cursor.fetchone()
+            if not parent or parent['IdSegnalazione'] != report_id or parent['Visibilita'] != 'pubblica':
+                raise ValueError("Il commento a cui rispondi non è disponibile in questa discussione.")
+        cursor.execute("INSERT INTO COMMENTO (IdAutore, IdSegnalazione, Testo, Visibilita, IdCommentoPadre) VALUES (%s, %s, %s, 'pubblica', %s)",
+                       (user_id, report_id, text, parent_id))
         comment_id = cursor.lastrowid
+        recipients = {report.get('IdAutore')}
+        if parent:
+            recipients.add(parent['IdAutore'])
+        for recipient in recipients:
+            notify(cursor, recipient, user_id, report_id, 'risposta_commento' if parent and recipient == parent['IdAutore'] else 'nuovo_commento', comment_id)
         cursor.execute("""INSERT INTO EVENTO_LOG
             (IdEsecutore, TipoAzione, Esito, Dettagli, IdSegnalazione, IdCommento)
             VALUES (%s, 'pubblicazione_commento', 'successo', 'Commento pubblicato', %s, %s)""",
@@ -193,13 +207,13 @@ def add_comment(report_id, user_id, text):
         cursor.execute("""SELECT c.DataPubblicazione AS data, CONCAT(u.Nome, ' ', u.Cognome) AS autore
             FROM COMMENTO c JOIN UTENTE u ON u.IdUtente=c.IdAutore WHERE c.IdCommento=%s""", (comment_id,))
         row = cursor.fetchone()
-        return {"id": comment_id, "testo": text, "autore": row["autore"],
+        return {"id": comment_id, "parent_id": parent_id, "autore_id": user_id, "visibilita": "pubblica", "testo": text, "autore": row["autore"],
                 "data": row["data"].isoformat(timespec="seconds")}
 
 
 def set_support(report_id, user_id, active):
     with database_cursor(write=True) as cursor:
-        cursor.execute("SELECT Visibilita, duplicate_of_id FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+        cursor.execute("SELECT Visibilita, duplicate_of_id, IdAutore FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
         report = cursor.fetchone()
         if not report or report["Visibilita"] != "pubblica" or report.get("duplicate_of_id"):
             return None
@@ -223,6 +237,8 @@ def set_support(report_id, user_id, active):
                            (user_id, report_id))
             changed = cursor.rowcount > 0
             action = "ritiro_sostegno"
+        if changed and active:
+            notify(cursor, report.get('IdAutore'), user_id, report_id, 'nuovo_sostegno')
         if changed:
             cursor.execute("SELECT IdSostegno FROM SOSTEGNO WHERE IdUtente=%s AND IdSegnalazione=%s", (user_id, report_id))
             support = cursor.fetchone()
@@ -250,7 +266,7 @@ def moderate_reports(ids, moderator_id, visibility):
     changed, missing, unchanged = 0, [], 0
     with database_cursor(write=True) as cursor:
         for report_id in sorted(set(ids)):
-            cursor.execute("SELECT Visibilita, duplicate_of_id FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+            cursor.execute("SELECT Visibilita, duplicate_of_id, IdAutore FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
             row = cursor.fetchone()
             if not row:
                 missing.append(report_id)
@@ -449,7 +465,7 @@ def unblock_user(user_id, moderator_id, reason):
 
 def change_report_state(report_id, user_id, new_state, reason=None):
     with database_cursor(write=True) as cursor:
-        cursor.execute("SELECT Stato, Tipo, duplicate_of_id FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+        cursor.execute("SELECT Stato, Tipo, duplicate_of_id, IdAutore FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
         report = cursor.fetchone()
         if not report:
             return False
@@ -459,6 +475,7 @@ def change_report_state(report_id, user_id, new_state, reason=None):
         if report.get("duplicate_of_id") or new_state not in states_for(report.get("Tipo", "segnalazione")) or new_state not in STATE_TRANSITIONS.get(report["Stato"], set()):
             return None
         cursor.execute("UPDATE SEGNALAZIONE SET Stato=%s WHERE IdSegnalazione=%s", (new_state, report_id))
+        notify(cursor, report.get("IdAutore"), user_id, report_id, "cambio_stato")
         if report.get("Tipo") == "segnalazione":
             cursor.execute("UPDATE DETTAGLIO_SEGNALAZIONE SET DataRisoluzione=IF(%s='risolta',CURRENT_TIMESTAMP,NULL) WHERE IdSegnalazione=%s", (new_state, report_id))
         cursor.execute("""INSERT INTO STORICO_STATO

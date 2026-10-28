@@ -71,6 +71,8 @@ def create_app(test_config=None):
     app.register_blueprint(geo_api)
     app.register_blueprint(pages)
     app.register_blueprint(reports)
+    from backend.community import community
+    app.register_blueprint(community)
 
     def error_response(message, status):
         if request.path.startswith("/api/"):

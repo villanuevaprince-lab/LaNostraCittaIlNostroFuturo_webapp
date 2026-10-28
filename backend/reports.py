@@ -138,7 +138,13 @@ def post_comment(report_id):
         return jsonify(error="Segnalazione non trovata."), 404
     if not 1 <= len(text) <= 3000:
         return jsonify(error="Il commento deve contenere da 1 a 3000 caratteri."), 400
-    comment = add_comment(report_id, g.user["id"], text)
+    parent_id = payload.get("parent_id")
+    if parent_id is not None and (type(parent_id) is not int or not 1 <= parent_id <= 4294967295):
+        return jsonify(error="Commento padre non valido."), 400
+    try:
+        comment = add_comment(report_id, g.user["id"], text, parent_id) if parent_id is not None else add_comment(report_id, g.user["id"], text)
+    except ValueError as error:
+        return jsonify(error=str(error)), 409
     if comment is None:
         return jsonify(error="Contenuto non più pubblico."), 409
     return jsonify(comment), 201

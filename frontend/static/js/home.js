@@ -58,17 +58,6 @@ async function loadReports() {
   }
 }
 
-function createComment(comment) {
-  const item = document.createElement("li");
-  item.className = "comment-item";
-  const author = document.createElement("strong");
-  author.textContent = comment.autore || "Cittadino";
-  const body = document.createElement("p");
-  body.textContent = comment.testo;
-  item.append(author, body);
-  return item;
-}
-
 function createCard(report) {
   const card = document.createElement("article");
   card.className = "report-card";
@@ -166,92 +155,16 @@ function createCard(report) {
   card.append(actions);
 
   const comments = document.createElement("details");
-  const summary = document.createElement("summary");
-  let commentCount = Number(report.commenti_count) || 0;
-  const updateSummary = () => {
-    summary.textContent = `Commenti (${commentCount})`;
-  };
-  updateSummary();
-  const commentsList = document.createElement("ul");
-  commentsList.className = "comment-list";
-  const commentsStatus = document.createElement("p");
-  commentsStatus.className = "status";
-  commentsStatus.setAttribute("role", "status");
-  let loaded = false;
-  let commentsRequest = 0;
-  async function loadComments() {
-    const currentRequest = ++commentsRequest;
-    commentsStatus.textContent = "Caricamento commenti…";
-    try {
-      const data = await fetch(`/api/segnalazioni/${report.id}`).then(readJSON);
-      if (currentRequest !== commentsRequest) return;
-      commentsList.replaceChildren(...data.commenti.map(createComment));
-      commentCount = data.commenti.length;
-      updateSummary();
-      loaded = true;
-      commentsStatus.textContent = commentCount ? "" : "Nessun commento. Inizia la discussione!";
-    } catch (error) {
-      if (currentRequest === commentsRequest) commentsStatus.textContent = error.message;
-    }
-  }
+  const summary = document.createElement("summary"); summary.textContent = `Commenti (${Number(report.commenti_count) || 0})`;
+  const discussionRoot = document.createElement("div");
+  let mounted = false;
   comments.addEventListener("toggle", () => {
-    if (comments.open && !loaded) loadComments();
+    if (comments.open && !mounted) {
+      mounted = true;
+      mountDiscussion(discussionRoot, report.id, null, (count) => { summary.textContent = `Commenti (${count})`; });
+    }
   });
-  comments.append(summary, commentsList, commentsStatus);
-
-  if (isAuthenticated) {
-    const form = document.createElement("form");
-    const label = document.createElement("label");
-    label.textContent = "Scrivi un commento";
-    const textarea = document.createElement("textarea");
-    textarea.name = "testo";
-    textarea.maxLength = 3000;
-    textarea.required = true;
-    textarea.rows = 3;
-    label.append(textarea);
-    const submit = document.createElement("button");
-    submit.className = "button";
-    submit.textContent = "Pubblica commento";
-    form.append(label, submit);
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const testo = textarea.value.trim();
-      if (!testo) return;
-      submit.disabled = true;
-      commentsStatus.textContent = "";
-      try {
-        const comment = await fetch(`/api/segnalazioni/${report.id}/commenti`, {
-          method: "POST", credentials: "same-origin",
-          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
-          body: JSON.stringify({ testo }),
-        }).then(readJSON);
-        textarea.value = "";
-        if (loaded) {
-          commentsList.append(createComment(comment));
-          commentCount += 1;
-          updateSummary();
-          commentsStatus.textContent = "Commento pubblicato.";
-        } else {
-          // Annulla logicamente l'eventuale GET iniziale in corso.
-          commentsRequest += 1;
-          commentCount += 1;
-          updateSummary();
-          await loadComments();
-          if (loaded) commentsStatus.textContent = "Commento pubblicato.";
-        }
-      } catch (error) {
-        commentsStatus.textContent = error.message;
-      } finally {
-        submit.disabled = false;
-      }
-    });
-    comments.append(form);
-  } else {
-    const loginToComment = document.createElement("a");
-    loginToComment.href = "/login?next=%2F";
-    loginToComment.textContent = "Accedi per commentare";
-    comments.append(loginToComment);
-  }
+  comments.append(summary, discussionRoot);
   card.append(comments);
   return card;
 }

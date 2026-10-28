@@ -14,3 +14,4 @@ storage/uploads/*
 certificates/*
 !certificates/.gitkeep
 node_modules/
+.test-tools/

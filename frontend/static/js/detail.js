@@ -49,31 +49,7 @@ fetch(`/api/segnalazioni/${detail.dataset.reportId}`, { credentials: "same-origi
         document.querySelector("#comparison-images").append(figure);
       }
     }
-    const list = document.querySelector("#detail-comments");
-    (report.commenti || []).forEach((comment) => {
-      const item = document.createElement("li"); item.className = "comment-item";
-      const author = document.createElement("strong"); author.textContent = comment.autore;
-      const body = document.createElement("p"); body.textContent = comment.testo;
-      item.append(author, body); list.append(item);
-      if (detail.dataset.moderator === "true") {
-        const remove = document.createElement("button");
-        remove.className = "button button-secondary"; remove.type = "button";
-        remove.textContent = "Rimuovi commento";
-        remove.addEventListener("click", async () => {
-          remove.disabled = true;
-          try {
-            const response = await fetch(`/api/moderazione/commenti/${comment.id}`, {
-              method: "DELETE", credentials: "same-origin",
-              headers: { "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
-            });
-            if (!response.ok) throw new Error((await response.json()).error || "Operazione non riuscita.");
-            item.remove(); status.textContent = "Commento rimosso.";
-          } catch (error) { status.textContent = error.message; remove.disabled = false; }
-        });
-        item.append(remove);
-      }
-    });
-    if (!report.commenti?.length) list.textContent = "Nessun commento visibile.";
+    mountDiscussion(document.querySelector("#detail-comments"), report.id, report.commenti || []);
     const lat = Number(report.latitude), lng = Number(report.longitude);
     if (report.latitude !== null && report.longitude !== null && Number.isFinite(lat) && Number.isFinite(lng)) {
       setupMap(document.querySelector("#detail-map"), { interactive: false, lat, lng });

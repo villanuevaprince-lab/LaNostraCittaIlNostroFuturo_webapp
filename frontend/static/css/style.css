@@ -409,3 +409,9 @@ nav a:hover, .report-card a:hover, .moderation-row a:hover { text-decoration: un
 .comparison-images figcaption { font-weight:700; margin-bottom:.75rem; }
 .comparison-images img { width:100%; height:auto; border-radius:.3rem; }
 @media (max-width:600px) { .comparison-images { grid-template-columns:1fr; } }
+
+/* Discussioni: indentazione limitata per restare leggibili su telefono. */
+.thread-level-1 { margin-left:1rem; border-left:2px solid #cbd5e1; padding-left:.75rem; }
+.thread-level-2, .thread-level-3 { margin-left:2rem; border-left:2px solid #cbd5e1; padding-left:.75rem; }
+.comment-item > a { display:block; margin-block:.4rem; }
+.comment-item > button { margin:.25rem .4rem .25rem 0; }

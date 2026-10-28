@@ -9,6 +9,7 @@ const selected = new Set();
 let reportCursor = null;
 const loadedReportIds = new Set();
 let userCursor = null;
+const loadedUserIds = new Set();
 let loadingReports = false;
 let queueGeneration = 0;
 let pendingReset = false;
@@ -230,12 +231,15 @@ function renderUser(user) {
 
 async function loadUsers(reset = false) {
   if (reset) {
-    userGeneration += 1; userCursor = null; userRoot.replaceChildren();
+    userGeneration += 1; userCursor = null; loadedUserIds.clear(); userRoot.replaceChildren();
     document.querySelector("#users-next").hidden = true;
   }
   if (loadingUsers) { if (reset) pendingUserReset = true; return; }
+  if (!reset && loadedUserIds.size && userCursor === null) return;
   loadingUsers = true;
   const generation = userGeneration;
+  const requestedCursor = userCursor;
+  document.querySelector("#users-next").disabled = true;
   usersStatus.textContent = "Caricamento utenti…";
   try {
     const params = new URLSearchParams();
@@ -243,13 +247,17 @@ async function loadUsers(reset = false) {
     if (userSearch.value.trim()) params.set("q", userSearch.value.trim());
     const page = await requestJSON(`/api/moderazione/utenti?${params}`);
     if (generation !== userGeneration) return;
-    page.items.forEach((item) => userRoot.append(renderUser(item)));
-    userCursor = page.next_cursor;
+    const fresh = page.items.filter((item) => !loadedUserIds.has(Number(item.id)));
+    fresh.forEach((item) => { loadedUserIds.add(Number(item.id)); userRoot.append(renderUser(item)); });
+    const candidate = Number(page.next_cursor);
+    userCursor = fresh.length && Number.isSafeInteger(candidate) && candidate > 0 &&
+      (requestedCursor === null || candidate < requestedCursor) ? candidate : null;
     document.querySelector("#users-next").hidden = !userCursor;
     usersStatus.textContent = userRoot.children.length ? `${userRoot.children.length} utenti mostrati.` : "Nessun utente trovato.";
   } catch (error) { usersStatus.textContent = error.message; }
   finally {
     loadingUsers = false;
+    document.querySelector("#users-next").disabled = false;
     if (pendingUserReset) { pendingUserReset = false; loadUsers(); }
   }
 }
