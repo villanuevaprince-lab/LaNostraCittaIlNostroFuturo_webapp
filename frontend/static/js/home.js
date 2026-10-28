@@ -45,6 +45,7 @@ async function loadReports() {
   if (neighborhood.value) params.set("quartiere", neighborhood.value);
   categoriesRoot.querySelectorAll("input:checked").forEach((input) => params.append("categoria", input.value));
   if (state.value) params.set("stato", state.value);
+  if (document.querySelector("#filter-type").value) params.set("tipo", document.querySelector("#filter-type").value);
   params.set("ordina", sort.value);
   try {
     const rows = await fetch(`/api/segnalazioni?${params}`, {
@@ -73,7 +74,7 @@ function createCard(report) {
   card.className = "report-card";
   const badge = document.createElement("span");
   badge.className = "badge";
-  badge.textContent = `${report.tipo} · ${String(report.stato).replaceAll("_", " ")}`;
+  setStateBadge(badge, report);
   const title = document.createElement("h3");
   const detailLink = document.createElement("a");
   detailLink.href = `/reports/${report.id}`;
@@ -89,6 +90,11 @@ function createCard(report) {
     meta.append(item);
   });
   card.append(badge, title, description, meta);
+  if (report.tipo === "proposta") {
+    const progress = document.createElement("p");
+    progress.textContent = `${report.sostegni} / ${report.soglia_sostegni} sostegni · ${report.sostegni >= report.soglia_sostegni ? "Soglia raggiunta" : "Obiettivo della proposta"}`;
+    card.append(progress);
+  }
   if (report.categorie?.length) {
     const tags = document.createElement("div"); tags.className = "tag-list";
     report.categorie.forEach((category) => {
@@ -251,6 +257,6 @@ function createCard(report) {
 }
 
 search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadReports, 250); });
-[neighborhood, state, sort].forEach((element) => element.addEventListener("change", loadReports));
+[neighborhood, state, sort, document.querySelector("#filter-type")].forEach((element) => element.addEventListener("change", loadReports));
 categoriesRoot.addEventListener("change", () => { updateCategorySummary(); loadReports(); });
 loadFilters().then(loadReports).catch((error) => { status.textContent = error.message; });

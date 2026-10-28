@@ -108,8 +108,8 @@ def test_publication_follows_attachment_insert_in_one_transaction(fake_mysql):
     queries = [call.args[0] for call in cursor.execute.call_args_list]
     assert "'bozza'" in queries[0]
     assert cursor.execute.call_args_list[0].args[1][0] == 9
-    assert "INSERT INTO ALLEGATO" in queries[1]
-    assert "INSERT INTO ALLEGATO_CONTENUTO" in queries[2]
+    assert any("INSERT INTO ALLEGATO" in query for query in queries)
+    assert any("INSERT INTO ALLEGATO_CONTENUTO" in query for query in queries)
     attachment_index = next(index for index, sql in enumerate(queries) if "INSERT INTO ALLEGATO" in sql)
     publish_index = next(index for index, sql in enumerate(queries) if "SET Visibilita='pubblica'" in sql)
     assert publish_index > attachment_index
@@ -219,11 +219,11 @@ def test_moderation_all_view_excludes_hidden_and_removed(fake_mysql):
 
 def test_closed_report_can_reopen_and_records_history(fake_mysql):
     connection, cursor = fake_mysql
-    cursor.fetchone.side_effect = [{"Stato": "chiusa"}, {"1": 1}]
-    assert change_report_state(12, 9, "aperta", "Riaperta") is True
+    cursor.fetchone.side_effect = [{"Stato": "archiviata", "Tipo": "segnalazione"}, {"1": 1}]
+    assert change_report_state(12, 9, "inviata", "Riaperta") is True
     history = next(call.args[1] for call in cursor.execute.call_args_list
                    if "INSERT INTO STORICO_STATO" in call.args[0])
-    assert history == (12, "chiusa", "aperta", 9, "Riaperta")
+    assert history == (12, "archiviata", "inviata", 9, "Riaperta")
     connection.commit.assert_called_once()
 
 

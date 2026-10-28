@@ -107,7 +107,8 @@ function renderReport(report, states) {
     ? report.ritirata_autore ? "ritirata dall'autore" : "rimossa dai moderatori"
     : report.visibilita;
   meta.textContent = `${report.tipo} · ${report.autore} · ${report.data_creazione.slice(0, 10)} · ${visibilityLabel}`;
-  body.append(heading, meta);
+  const badge = document.createElement("span"); setStateBadge(badge, report);
+  body.append(heading, badge, meta);
   const controls = document.createElement("div"); controls.className = "toolbar";
   if (report.visibilita !== "pubblica" && !check.disabled) controls.append(button(
     report.visibilita === "rimossa" ? "Reinserisci" : "Approva", "button",
@@ -117,24 +118,37 @@ function renderReport(report, states) {
   if (report.visibilita === "pubblica") controls.append(button(
     "Nascondi", "button button-secondary", () => action([report.id], "nascondi")));
   controls.append(button("Blocca autore", "button button-secondary", () => blockUser(report.autore_id, report.autore)));
+  if (report.duplicate_of_id) {
+    const note = document.createElement("a"); note.href = `/reports/${report.duplicate_of_id}`; note.textContent = `Unita al contenuto #${report.duplicate_of_id}`; controls.append(note);
+  }
   const stateDefinition = states.find((item) => item.codice === report.stato);
   const stateLabel = document.createElement("label"); stateLabel.className = "state-control";
   stateLabel.textContent = "Stato";
   const stateSelect = document.createElement("select");
-  const allowed = [report.stato, ...(stateDefinition?.prossimi || [])];
+  const allowed = [report.stato, ...(stateDefinition?.prossimi || []).filter((code) => states.find((s) => s.codice === code)?.tipi.includes(report.tipo))];
   allowed.forEach((code) => {
     const state = states.find((item) => item.codice === code);
     stateSelect.add(new Option(state?.etichetta || code.replaceAll("_", " "), code));
   });
   stateSelect.value = report.stato;
-  stateSelect.disabled = allowed.length < 2;
+  stateSelect.disabled = Boolean(report.duplicate_of_id) || allowed.length < 2;
   stateLabel.append(stateSelect);
   controls.append(stateLabel, button("Cambia stato", "button button-secondary", async () => {
-    if (stateSelect.value === report.stato) return;
+    if (report.duplicate_of_id || stateSelect.value === report.stato) return;
     try {
       await requestJSON(`/api/segnalazioni/${report.id}/stato`, "PATCH", { stato: stateSelect.value });
       await loadReports(true);
       status.textContent = `Stato aggiornato per «${report.titolo}».`;
+    } catch (error) { status.textContent = error.message; }
+  }));
+  if (report.visibilita === "pubblica" && !report.duplicate_of_id) controls.append(button("Unisci duplicato", "button button-secondary", async () => {
+    const target = window.prompt("ID del contenuto principale dello stesso tipo (i sostegni saranno deduplicati e i commenti trasferiti):");
+    if (!target) return;
+    const reason = window.prompt("Motivazione dell'unione:");
+    if (!reason) return;
+    try {
+      await requestJSON(`/api/moderazione/segnalazioni/${report.id}/duplicato`, "POST", { duplicate_of_id: Number(target), motivazione: reason });
+      await loadReports(true); status.textContent = "Duplicato unito al contenuto principale.";
     } catch (error) { status.textContent = error.message; }
   }));
   row.append(check, body, controls);

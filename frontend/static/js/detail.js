@@ -7,7 +7,7 @@ fetch(`/api/segnalazioni/${detail.dataset.reportId}`, { credentials: "same-origi
     document.querySelector("#detail-title").textContent = report.titolo;
     const badge = document.querySelector("#detail-badge");
     badge.hidden = false;
-    badge.textContent = `${report.tipo} · ${report.visibilita === "bozza" ? "in revisione" : report.visibilita}`;
+    setStateBadge(badge, report);
     document.querySelector("#detail-description").textContent = report.descrizione;
     document.querySelector("#detail-meta").textContent = [report.autore, report.quartiere,
       report.stato?.replaceAll("_", " "), report.data_creazione?.slice(0, 10)]
@@ -26,6 +26,28 @@ fetch(`/api/segnalazioni/${detail.dataset.reportId}`, { credentials: "same-origi
       if (media.tagName === "VIDEO") media.controls = true;
       else media.alt = `Allegato: ${report.titolo}`;
       document.querySelector("#detail-media").append(media);
+    }
+    const resolutionForm = document.querySelector("#resolution-form");
+    if (resolutionForm && report.tipo === "segnalazione" && report.visibilita === "pubblica") resolutionForm.hidden = false;
+    if (report.tipo === "proposta") {
+      const progress = document.querySelector("#proposal-progress"); progress.hidden = false;
+      progress.textContent = `${report.sostegni} / ${report.soglia_sostegni} sostegni. ${report.sostegni >= report.soglia_sostegni ? "Soglia raggiunta: proposta pronta per la valutazione." : "Sostieni questa idea di quartiere."}`;
+    }
+    if (report.tipo === "segnalazione" && report.stato === "risolta" && report.visibilita !== "rimossa") {
+      document.querySelector("#resolution-comparison").hidden = false;
+      document.querySelector("#resolution-description").textContent = report.risoluzione || "Intervento concluso.";
+      for (const role of ["prima", "dopo"]) {
+        const figure = document.createElement("figure");
+        const caption = document.createElement("figcaption"); caption.textContent = role === "prima" ? "Prima" : "Dopo";
+        figure.append(caption);
+        const photos = (report.allegati || []).filter((a) => a.ruolo === role && a.mime.startsWith("image/"));
+        if (!photos.length) { const note = document.createElement("p"); note.textContent = "Foto non disponibile."; figure.append(note); }
+        photos.forEach((photo) => {
+          const img = document.createElement("img"); img.src = `/api/allegati/${photo.id}`;
+          img.alt = `${caption.textContent} l'intervento: ${report.titolo}`; img.loading = "lazy"; figure.append(img);
+        });
+        document.querySelector("#comparison-images").append(figure);
+      }
     }
     const list = document.querySelector("#detail-comments");
     (report.commenti || []).forEach((comment) => {
@@ -63,3 +85,20 @@ fetch(`/api/segnalazioni/${detail.dataset.reportId}`, { credentials: "same-origi
     status.textContent = "";
   })
   .catch((error) => { status.textContent = error.message; });
+
+
+document.querySelector("#resolution-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget, button = form.querySelector("button");
+  const message = form.querySelector("[data-resolution-status]");
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/moderazione/segnalazioni/${detail.dataset.reportId}/risoluzione`, {
+      method: "POST", credentials: "same-origin", body: new FormData(form),
+      headers: { "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Salvataggio non riuscito.");
+    window.location.reload();
+  } catch (error) { message.textContent = error.message; button.disabled = false; }
+});

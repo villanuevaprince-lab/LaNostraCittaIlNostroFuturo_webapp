@@ -22,6 +22,7 @@
       </label>
     </div>
     <div class="filter-row">
+      <label class="field">Contenuti<select id="filter-type"><option value="">Tutti</option><option value="segnalazione">Segnalazioni</option><option value="proposta">Proposte</option></select></label>
       <label class="field">Quartiere<select id="filter-neighborhood"><option value="">Tutti i quartieri</option></select></label>
       <div class="field"><span id="category-filter-label">Categorie</span>
         <details class="category-dropdown" aria-labelledby="category-filter-label">
@@ -33,10 +34,13 @@
         </details>
       </div>
       <label class="field">Stato<select id="filter-state">
-        <option value="">Tutti gli stati</option><option value="nuova">Nuova</option>
-        <option value="aperta">Aperta</option><option value="in_valutazione">In valutazione</option>
-        <option value="in_lavorazione">In lavorazione</option><option value="presa_in_carico">Presa in carico</option>
-        <option value="risolta">Risolta</option><option value="chiusa">Chiusa</option>
+        <option value="">Tutti gli stati</option><option value="inviata">Inviata</option>
+        <option value="presa_in_carico">Presa in carico</option>
+        <option value="in_lavorazione">In lavorazione</option>
+        <option value="risolta">Risolta</option>
+        <option value="archiviata">Respinta / Archiviata</option>
+        <option value="in_valutazione">Proposte in valutazione</option>
+        <option value="approvata">Proposte approvate</option>
       </select></label>
       <label class="field">Ordina per<select id="sort-reports">
         <option value="recenti">Più recenti</option><option value="sostegni">Più sostenute</option>

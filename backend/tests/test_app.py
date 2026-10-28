@@ -300,8 +300,8 @@ def test_user_search_and_permanent_ban_require_moderator(client, logged_in, monk
 
 def test_state_catalog_exposes_allowed_transitions(client):
     states = {row["codice"]: row for row in client.get("/api/stati").get_json()}
-    assert "risolta" in states["aperta"]["prossimi"]
-    assert "aperta" in states["chiusa"]["prossimi"]
+    assert "risolta" in states["inviata"]["prossimi"]
+    assert "inviata" in states["archiviata"]["prossimi"]
 
 
 def test_security_headers(client):

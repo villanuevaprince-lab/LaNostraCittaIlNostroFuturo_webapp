@@ -14,19 +14,11 @@ def write_attachment_content(cursor, attachment_id, content):
             VALUES (%s, %s, %s)""", (attachment_id, number, content[start:start + MEDIA_CHUNK_BYTES]))
 
 
-STATE_TRANSITIONS = {
-    "nuova": {"aperta", "in_valutazione", "chiusa"},
-    "aperta": {"in_valutazione", "in_lavorazione", "presa_in_carico", "risolta", "chiusa"},
-    "in_valutazione": {"in_lavorazione", "presa_in_carico", "risolta", "chiusa"},
-    "in_lavorazione": {"presa_in_carico", "risolta", "chiusa"},
-    "presa_in_carico": {"in_lavorazione", "risolta", "chiusa"},
-    "risolta": {"aperta", "chiusa"},
-    "chiusa": {"aperta", "in_valutazione", "in_lavorazione", "presa_in_carico", "risolta"},
-}
+from backend.lifecycle import STATE_TRANSITIONS, states_for
 
 
 def create_report_record(data, author, upload):
-    initial_state = "aperta" if data["tipo"] == "segnalazione" else "in_valutazione"
+    initial_state = "inviata" if data["tipo"] == "segnalazione" else "in_valutazione"
 
     with database_cursor(write=True) as cursor:
         cursor.execute("""INSERT INTO SEGNALAZIONE
@@ -36,6 +28,10 @@ def create_report_record(data, author, upload):
             (author["id"], data["quartiere_id"], data["tipo"], data["titolo"],
              data["descrizione"], initial_state, data.get("latitude"), data.get("longitude"), data.get("indirizzo") or None))
         report_id = cursor.lastrowid
+        if data["tipo"] == "proposta":
+            cursor.execute("INSERT INTO PROPOSTA (IdSegnalazione, SogliaSostegni) VALUES (%s,%s)", (report_id, data.get("soglia_sostegni", 100)))
+        else:
+            cursor.execute("INSERT INTO DETTAGLIO_SEGNALAZIONE (IdSegnalazione) VALUES (%s)", (report_id,))
         cursor.execute("""INSERT INTO ALLEGATO
             (IdSegnalazione, IdAutore, TipoMedia, RiferimentoFile, NomeOriginale,
              DimensioneByte, HashSHA256, DescrizioneAccessibile)
@@ -63,10 +59,15 @@ def create_report_record(data, author, upload):
 
 def list_report_records(search="", neighborhood_id=None, category_ids=None, state=None,
                         author_id=None, viewer_id=None, order="recenti",
-                        visibility_filter=None, cursor_id=None, limit=100):
+                        visibility_filter=None, cursor_id=None, limit=100, content_type=None):
     filters = ["s.Visibilita = 'pubblica'" if author_id is None else "s.Visibilita IN ('pubblica','bozza','nascosta','rimossa')",
                "(%s = '' OR s.Titolo LIKE %s OR s.Descrizione LIKE %s OR COALESCE(s.Indirizzo, '') LIKE %s)"]
     params = [search, f"%{search}%", f"%{search}%", f"%{search}%"]
+    if author_id is None:
+        filters.append("s.duplicate_of_id IS NULL")
+    if content_type:
+        filters.append("s.Tipo=%s")
+        params.append(content_type)
     if neighborhood_id:
         filters.append("s.IdQuartiere = %s")
         params.append(neighborhood_id)
@@ -92,6 +93,7 @@ def list_report_records(search="", neighborhood_id=None, category_ids=None, stat
             params.append(cursor_id)
     query = """SELECT s.IdSegnalazione AS id, s.Tipo AS tipo, s.Titolo AS titolo,
         s.Descrizione AS descrizione, s.Stato AS stato, s.Visibilita AS visibilita,
+        s.duplicate_of_id, (SELECT SogliaSostegni FROM PROPOSTA p WHERE p.IdSegnalazione=s.IdSegnalazione) AS soglia_sostegni,
         COALESCE(s.Indirizzo, '') AS indirizzo,
         CONCAT(u.Nome, ' ', u.Cognome) AS autore, s.DataCreazione AS data_creazione,
         s.IdQuartiere AS quartiere_id, q.Nome AS quartiere,
@@ -132,6 +134,7 @@ def get_report_record(report_id):
     with database_cursor() as cursor:
         cursor.execute("""SELECT s.IdSegnalazione AS id, s.IdQuartiere AS quartiere_id,
             s.Tipo AS tipo, s.Titolo AS titolo, s.Descrizione AS descrizione, s.Stato AS stato,
+            s.duplicate_of_id,
             s.Visibilita AS visibilita, s.DataCreazione AS data_creazione, s.Indirizzo AS indirizzo,
             s.Latitudine AS latitude, s.Longitudine AS longitude,
             s.IdAutore AS autore_id, q.Nome AS quartiere,
@@ -152,6 +155,13 @@ def get_report_record(report_id):
     if row:
         raw = row.pop("categorie_json", None)
         row["categorie"] = sorted(json.loads(raw), key=lambda category: category["nome"]) if raw else []
+        with database_cursor() as cursor:
+            cursor.execute("SELECT IdAllegato AS id, TipoMedia AS mime, Ruolo AS ruolo FROM ALLEGATO WHERE IdSegnalazione=%s ORDER BY IdAllegato", (report_id,))
+            row["allegati"] = cursor.fetchall()
+            cursor.execute("SELECT SogliaSostegni AS soglia_sostegni FROM PROPOSTA WHERE IdSegnalazione=%s", (report_id,))
+            row.update(cursor.fetchone() or {})
+            cursor.execute("SELECT Risoluzione AS risoluzione FROM DETTAGLIO_SEGNALAZIONE WHERE IdSegnalazione=%s", (report_id,))
+            row.update(cursor.fetchone() or {})
     return row
 
 
@@ -169,9 +179,9 @@ def report_comments(report_id):
 
 def add_comment(report_id, user_id, text):
     with database_cursor(write=True) as cursor:
-        cursor.execute("SELECT Visibilita FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+        cursor.execute("SELECT Visibilita, duplicate_of_id FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
         report = cursor.fetchone()
-        if not report or report["Visibilita"] != "pubblica":
+        if not report or report["Visibilita"] != "pubblica" or report.get("duplicate_of_id"):
             return None
         cursor.execute("INSERT INTO COMMENTO (IdAutore, IdSegnalazione, Testo, Visibilita) VALUES (%s, %s, %s, 'pubblica')",
                        (user_id, report_id, text))
@@ -189,9 +199,9 @@ def add_comment(report_id, user_id, text):
 
 def set_support(report_id, user_id, active):
     with database_cursor(write=True) as cursor:
-        cursor.execute("SELECT Visibilita FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+        cursor.execute("SELECT Visibilita, duplicate_of_id FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
         report = cursor.fetchone()
-        if not report or report["Visibilita"] != "pubblica":
+        if not report or report["Visibilita"] != "pubblica" or report.get("duplicate_of_id"):
             return None
         cursor.execute("""SELECT IdSostegno, DataRitiro FROM SOSTEGNO
             WHERE IdUtente=%s AND IdSegnalazione=%s FOR UPDATE""", (user_id, report_id))
@@ -240,7 +250,7 @@ def moderate_reports(ids, moderator_id, visibility):
     changed, missing, unchanged = 0, [], 0
     with database_cursor(write=True) as cursor:
         for report_id in sorted(set(ids)):
-            cursor.execute("SELECT Visibilita FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+            cursor.execute("SELECT Visibilita, duplicate_of_id FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
             row = cursor.fetchone()
             if not row:
                 missing.append(report_id)
@@ -291,18 +301,21 @@ def list_moderation_reports(cursor_id=None, visibility="tutte", limit=25):
     elif visibility in STATE_TRANSITIONS:
         visibility_clause = "s.Visibilita <> 'rimossa' AND s.Stato=%s"
         visibility_params = [visibility]
+    elif visibility == "duplicati":
+        visibility_clause = "s.duplicate_of_id IS NOT NULL"
+        visibility_params = []
     else:
         # Compatibilità con eventuali client precedenti alla vista per stato.
         visibility_clause = "s.Visibilita=%s"
         visibility_params = [visibility]
     with database_cursor() as cursor:
         query = """SELECT s.IdSegnalazione AS id, s.Titolo AS titolo, s.Tipo AS tipo,
-            s.Stato AS stato, s.Visibilita AS visibilita, s.DataCreazione AS data_creazione,
+            s.Stato AS stato, s.Visibilita AS visibilita, s.duplicate_of_id, s.DataCreazione AS data_creazione,
             CONCAT(u.Nome, ' ', u.Cognome) AS autore, u.IdUtente AS autore_id,
             (SELECT COUNT(*) FROM EVENTO_LOG e WHERE e.IdSegnalazione=s.IdSegnalazione
              AND e.TipoAzione='ritiro_segnalazione') AS ritirata_autore
             FROM SEGNALAZIONE s JOIN UTENTE u ON u.IdUtente=s.IdAutore
-            WHERE """ + visibility_clause + """ AND (%s IS NULL OR s.IdSegnalazione < %s)
+            WHERE """ + visibility_clause + ("" if visibility in {"duplicati", "rimossa"} else " AND s.duplicate_of_id IS NULL") + """ AND (%s IS NULL OR s.IdSegnalazione < %s)
             ORDER BY s.IdSegnalazione DESC LIMIT %s"""
         cursor.execute(query, (*visibility_params, cursor_id, cursor_id, limit + 1))
         rows = cursor.fetchall()
@@ -436,16 +449,18 @@ def unblock_user(user_id, moderator_id, reason):
 
 def change_report_state(report_id, user_id, new_state, reason=None):
     with database_cursor(write=True) as cursor:
-        cursor.execute("SELECT Stato FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+        cursor.execute("SELECT Stato, Tipo, duplicate_of_id FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
         report = cursor.fetchone()
         if not report:
             return False
         cursor.execute("SELECT 1 FROM STATO_SEGNALAZIONE WHERE Codice=%s", (new_state,))
         if not cursor.fetchone():
             return None
-        if new_state not in STATE_TRANSITIONS.get(report["Stato"], set()):
+        if report.get("duplicate_of_id") or new_state not in states_for(report.get("Tipo", "segnalazione")) or new_state not in STATE_TRANSITIONS.get(report["Stato"], set()):
             return None
         cursor.execute("UPDATE SEGNALAZIONE SET Stato=%s WHERE IdSegnalazione=%s", (new_state, report_id))
+        if report.get("Tipo") == "segnalazione":
+            cursor.execute("UPDATE DETTAGLIO_SEGNALAZIONE SET DataRisoluzione=IF(%s='risolta',CURRENT_TIMESTAMP,NULL) WHERE IdSegnalazione=%s", (new_state, report_id))
         cursor.execute("""INSERT INTO STORICO_STATO
             (IdSegnalazione, StatoPrecedente, StatoSuccessivo, IdAutoreModifica, Motivazione)
             VALUES (%s, %s, %s, %s, %s)""", (report_id, report["Stato"], new_state, user_id, reason))

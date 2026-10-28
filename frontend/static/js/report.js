@@ -146,3 +146,10 @@ form.addEventListener("submit", async (event) => {
     form.removeAttribute("aria-busy");
   }
 });
+
+form.querySelector('[name="tipo"]').addEventListener("change", (event) => {
+  const proposal = event.target.value === "proposta";
+  const field = document.querySelector("#proposal-threshold");
+  field.hidden = !proposal; field.querySelector("input").disabled = !proposal;
+  document.querySelector("#report-title").textContent = proposal ? "Nuova proposta" : "Nuova segnalazione";
+});

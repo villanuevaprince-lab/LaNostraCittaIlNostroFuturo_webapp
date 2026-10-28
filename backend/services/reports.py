@@ -49,10 +49,16 @@ def create_report(data, author, uploaded_file):
         raise ReportValidationError("Seleziona il punto sulla mappa.")
     if not latitude.is_finite() or not longitude.is_finite() or not in_milan(latitude, longitude):
         raise ReportValidationError("Seleziona un punto nell'area di Milano.")
+    try:
+        threshold = int(data.get("soglia_sostegni") or 100)
+    except (ValueError, TypeError):
+        raise ReportValidationError("Soglia di sostegni non valida.")
+    if not 1 <= threshold <= 1000000:
+        raise ReportValidationError("La soglia deve essere compresa fra 1 e 1000000.")
     upload = save_upload(uploaded_file, title)
     try:
         return create_report_record({
-            "tipo": report_type, "titolo": title, "descrizione": description,
+            "tipo": report_type, "soglia_sostegni": threshold, "titolo": title, "descrizione": description,
             "indirizzo": address, "quartiere_id": neighborhood, "categorie": category_ids,
             "latitude": latitude.quantize(Decimal("0.000001")),
             "longitude": longitude.quantize(Decimal("0.000001")),

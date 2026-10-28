@@ -12,11 +12,21 @@ from backend.repositories.reports import (
     set_support, unblock_user, user_supports, withdraw_report,
 )
 from backend.services.reports import ReportValidationError, create_report
-from backend.services.uploads import UploadError
+from backend.services.uploads import UploadError, save_upload
+from backend.repositories.lifecycle import merge_reports, save_resolution
+from backend.lifecycle import REPORT_STATES, PROPOSAL_STATES
 from backend.security import login_required, role_required
 
 
 reports = Blueprint("reports", __name__)
+
+
+def canonical_id(report_id):
+    report = get_report_record(report_id)
+    if report and report['visibilita'] == 'pubblica':
+        return report.get('duplicate_of_id') or report_id
+    return report_id
+
 
 
 @reports.get("/reports/new")
@@ -31,6 +41,8 @@ def report_detail_page(report_id):
     if not report or (report["visibilita"] != "pubblica" and
                       not (g.user and (g.user["id"] == report["autore_id"] or g.user["is_moderator"]))):
         return render_template("error.html", message="Segnalazione non trovata.", status=404), 404
+    if report.get("duplicate_of_id"):
+        return redirect(f"/reports/{report['duplicate_of_id']}")
     return render_template("report_detail.html", report_id=report_id)
 
 
@@ -41,6 +53,9 @@ def get_reports():
     order = request.args.get("ordina", "recenti")
     if order not in {"recenti", "sostegni"}:
         return jsonify(error="Ordinamento non valido."), 400
+    kind = request.args.get("tipo") or None
+    if kind is not None and kind not in {"segnalazione", "proposta"}:
+        return jsonify(error="Tipo non valido."), 400
     raw_categories = request.args.getlist("categoria")
     if (len(raw_categories) > 10 or any(not value.isdigit() or int(value) < 1 for value in raw_categories)
             or len(set(raw_categories)) != len(raw_categories)):
@@ -52,7 +67,7 @@ def get_reports():
         request.args.get("stato", "").strip()[:30] or None,
         g.user["id"] if request.args.get("mie") == "1" and g.user else None,
         g.user["id"] if g.user else None,
-        order,
+        order, content_type=kind,
     )
     return jsonify(rows)
 
@@ -96,6 +111,8 @@ def get_report(report_id):
     if not report or (report["visibilita"] != "pubblica" and
                       not (g.user and (g.user["id"] == report["autore_id"] or g.user["is_moderator"]))):
         return jsonify(error="Segnalazione non trovata."), 404
+    if report.get("duplicate_of_id"):
+        return redirect(f"/api/segnalazioni/{report['duplicate_of_id']}")
     report["commenti"] = report_comments(report_id) if report["visibilita"] == "pubblica" else []
     report["data_creazione"] = report["data_creazione"].isoformat(timespec="seconds")
     return jsonify(report)
@@ -113,6 +130,7 @@ def delete_report(report_id):
 @reports.post("/api/segnalazioni/<int:report_id>/commenti")
 @login_required
 def post_comment(report_id):
+    report_id = canonical_id(report_id)
     report = get_report_record(report_id)
     payload = request.get_json(silent=True)
     text = payload.get("testo", "").strip() if isinstance(payload, dict) and isinstance(payload.get("testo"), str) else ""
@@ -129,6 +147,7 @@ def post_comment(report_id):
 @reports.put("/api/segnalazioni/<int:report_id>/sostegno")
 @login_required
 def put_support(report_id):
+    report_id = canonical_id(report_id)
     report = get_report_record(report_id)
     if not report or report.get("visibilita", "pubblica") != "pubblica":
         return jsonify(error="Segnalazione non trovata."), 404
@@ -146,6 +165,7 @@ def put_support(report_id):
 @reports.delete("/api/segnalazioni/<int:report_id>/sostegno")
 @login_required
 def delete_support(report_id):
+    report_id = canonical_id(report_id)
     report = get_report_record(report_id)
     if not report or report.get("visibilita", "pubblica") != "pubblica":
         return jsonify(error="Segnalazione non trovata."), 404
@@ -158,6 +178,7 @@ def delete_support(report_id):
 @reports.get("/api/segnalazioni/<int:report_id>/sostegno")
 @login_required
 def get_support(report_id):
+    report_id = canonical_id(report_id)
     report = get_report_record(report_id)
     if not report or report.get("visibilita", "pubblica") != "pubblica":
         return jsonify(error="Segnalazione non trovata."), 404
@@ -166,17 +187,11 @@ def get_support(report_id):
 
 @reports.get("/api/stati")
 def get_states():
-    rows = [
-        {"codice": "nuova", "etichetta": "Nuova"},
-        {"codice": "aperta", "etichetta": "Aperta"},
-        {"codice": "in_valutazione", "etichetta": "In valutazione"},
-        {"codice": "in_lavorazione", "etichetta": "In lavorazione"},
-        {"codice": "presa_in_carico", "etichetta": "Presa in carico"},
-        {"codice": "risolta", "etichetta": "Risolta"},
-        {"codice": "chiusa", "etichetta": "Chiusa"},
-    ]
-    for row in rows:
-        row["prossimi"] = sorted(STATE_TRANSITIONS.get(row["codice"], set()))
+    rows = []
+    for code, label in (REPORT_STATES | PROPOSAL_STATES).items():
+        rows.append({"codice": code, "etichetta": label,
+                     "tipi": [kind for kind, values in (("segnalazione", REPORT_STATES), ("proposta", PROPOSAL_STATES)) if code in values],
+                     "prossimi": sorted(STATE_TRANSITIONS[code])})
     return jsonify(rows)
 
 
@@ -216,7 +231,7 @@ def moderation_queue():
     visibility = request.args.get("vista", request.args.get("visibilita", "tutte"))
     cursor = request.args.get("cursor", type=int)
     limit = request.args.get("limit", 25, type=int)
-    if visibility not in {*STATE_TRANSITIONS, "tutte", "rimossa", "pubblica", "bozza", "nascosta"} or not 1 <= limit <= 50 or cursor is not None and cursor < 1:
+    if visibility not in {*STATE_TRANSITIONS, "tutte", "duplicati", "rimossa", "pubblica", "bozza", "nascosta"} or not 1 <= limit <= 50 or cursor is not None and cursor < 1:
         return jsonify(error="Filtro o paginazione non validi."), 400
     return jsonify(list_moderation_reports(cursor, visibility, limit))
 
@@ -317,3 +332,34 @@ def get_attachment(attachment_id):
     if root not in path.parents or not path.is_file():
         return jsonify(error="Allegato non trovato."), 404
     return send_file(path, conditional=True, max_age=3600)
+
+
+@reports.post("/api/moderazione/segnalazioni/<int:report_id>/duplicato")
+@role_required("moderatore")
+def merge_duplicate(report_id):
+    payload = request.get_json(silent=True) or {}
+    target = payload.get("duplicate_of_id") if isinstance(payload, dict) else None
+    reason = payload.get("motivazione", "") if isinstance(payload, dict) else None
+    if type(target) is not int or target < 1 or not isinstance(reason, str) or not 3 <= len(reason.strip()) <= 500:
+        return jsonify(error="Indica l'ID principale e una motivazione (3–500 caratteri)."), 400
+    try:
+        merge_reports(report_id, target, g.user['id'], reason.strip())
+    except ValueError as error:
+        return jsonify(error=str(error)), 409
+    return jsonify(ok=True, duplicate_of_id=target)
+
+
+@reports.post("/api/moderazione/segnalazioni/<int:report_id>/risoluzione")
+@role_required("moderatore")
+def document_resolution(report_id):
+    text = request.form.get("risoluzione", "").strip()
+    if not 3 <= len(text) <= 3000:
+        return jsonify(error="Descrivi l'intervento (3–3000 caratteri)."), 400
+    try:
+        upload = save_upload(request.files.get("allegato"), "Intervento completato")
+        if not upload['mime'].startswith('image/'):
+            raise UploadError("Per il confronto Dopo serve una foto.")
+        save_resolution(report_id, g.user['id'], text, upload)
+    except (UploadError, ValueError) as error:
+        return jsonify(error=str(error)), 400
+    return jsonify(ok=True), 201
