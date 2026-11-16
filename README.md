@@ -20,8 +20,10 @@ commenti e sostegni sono salvati nel database.
   MySQL; foto/video obbligatorio. I nuovi contenuti sono pubblici dopo
   l'inserimento dell'allegato nella stessa transazione.
 - Validazione upload JPEG/PNG/WebP/MP4/WebM fino a 20 MB. Le immagini sono
-  verificate con Pillow e risalvate senza metadati EXIF; non si estraggono
-  coordinate GPS.
+  verificate con Pillow e risalvate senza metadati EXIF; prima del
+  risalvataggio si legge il GPS EXIF, solo per proporre la posizione sulla mappa.
+- IA locale con Ollama (vedi «IA locale con Ollama»): moderazione del testo,
+  categorie suggerite e controllo di coerenza foto/testo, con revisione del comitato.
 - Commenti pubblici visibili anche agli ospiti; pubblicazione e sostegno
   richiedono account e CSRF. I sostegni ripetuti sono idempotenti.
 - Coda moderazione a paginazione keyset, selezione di tutte le righe caricate
@@ -73,6 +75,37 @@ radice con `python -m backend.app` (non `python backend/app.py`). Apri
 connessione MySQL è effettiva. Senza credenziali o certificato CA le API che
 richiedono il database rispondono `503`; non vengono mostrati dati fittizi.
 Rimuovi `APP_MODE=demo` da eventuali vecchi `.env`: non è più supportato.
+
+## IA locale con Ollama
+
+L'app chiama Ollama dal **server** (mai dal browser) all'indirizzo `OLLAMA_URL`
+(default `http://localhost:11434`). Nessun dato lascia la macchina.
+
+```bash
+ollama pull qwen2.5:7b      # testo: moderazione e categorie
+ollama pull qwen2.5vl:7b    # visione: coerenza foto/testo
+```
+
+Variabili in `.env` (vedi `.env.example`): `AI_ENABLED`, `OLLAMA_URL`,
+`OLLAMA_TEXT_MODEL`, `OLLAMA_VISION_MODEL`, timeout e soglie `AI_*_THRESHOLD`.
+
+Cosa succede a ogni invio (`POST /api/segnalazioni`):
+
+1. **Moderazione**: testo offensivo, d'odio o minaccioso con confidenza ≥ 0,80 →
+   invio rifiutato (400) con messaggio; casi volgari o dubbi (≥ 0,50) → il
+   contenuto resta `bozza` («In revisione») finché un moderatore lo approva.
+2. **Categorie**: l'IA propone fino a 3 categorie (salvate con `Origine='ia'` e
+   confidenza); se l'utente non ne sceglie nessuna, l'IA è obbligatoria per assegnarne almeno una.
+3. **Foto**: il modello di visione verifica la coerenza con il testo; una foto
+   non pertinente manda il contenuto in revisione. I video non sono analizzati.
+4. **Posizione**: il GPS EXIF della foto precompila mappa e indirizzo (solo entro Milano).
+5. Se Ollama è spento o va in timeout il contenuto viene pubblicato come prima e le
+   analisi risultano `non_disponibile` in `ANALISI_IA`, visibili ai moderatori.
+
+I risultati sono in `ANALISI_IA` (migrazione `008_ai_analysis.sql`, applicabile con
+`python -m backend.apply_ai_migration`). Su Vercel `localhost:11434` non esiste:
+l'IA funziona solo se l'app gira sulla stessa macchina di Ollama (altrimenti vale il
+comportamento senza IA). Il primo invio dopo l'avvio può essere lento per il caricamento dei modelli.
 
 ## Configurazione MySQL Aiven esistente
 
@@ -201,8 +234,9 @@ Usa HTTPS, server WSGI, `SESSION_COOKIE_SECURE=true`, `FLASK_DEBUG=0`, segreti
 persistenti e storage rate-limit condiviso (ad esempio Redis, con il relativo
 extra `Flask-Limiter`). `memory://` è adatto solo a sviluppo o test. Prevedi
 backup DB, retention degli allegati, scansione malware e monitoraggio. L'analisi
-IA non prende decisioni automatiche: i risultati devono restare soggetti a
-revisione umana.
+IA blocca da sola solo i testi chiaramente offensivi o d'odio (alta confidenza); ogni
+altro caso dubbio va in revisione umana e tutte le analisi restano consultabili
+dal comitato.
 
 La ricerca usa Nominatim pubblico solo dopo il click dell'utente (mai
 autocomplete), con limite globale configurato nello storage rate-limit e cache

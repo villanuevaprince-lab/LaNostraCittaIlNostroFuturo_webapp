@@ -16,6 +16,13 @@ from backend.database import ROOT_DIR
 from backend.security import csrf, limiter, load_current_user
 
 
+def _env_float(name, default):
+    try:
+        return float(os.getenv(name, default))
+    except ValueError:
+        return float(default)
+
+
 def create_app(test_config=None):
     load_dotenv(ROOT_DIR / ".env")
     upload_folder = Path(os.getenv("UPLOAD_FOLDER", "storage/uploads"))
@@ -40,6 +47,16 @@ def create_app(test_config=None):
         UPLOAD_FOLDER=str(upload_folder.resolve()),
         RATELIMIT_STORAGE_URI=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
         RATELIMIT_HEADERS_ENABLED=True,
+        # IA locale con Ollama: i controlli girano sul server, mai nel browser.
+        AI_ENABLED=os.getenv("AI_ENABLED", "true").lower() == "true",
+        OLLAMA_URL=os.getenv("OLLAMA_URL", "http://localhost:11434"),
+        OLLAMA_TEXT_MODEL=os.getenv("OLLAMA_TEXT_MODEL", "qwen2.5:7b"),
+        OLLAMA_VISION_MODEL=os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:7b"),
+        OLLAMA_TIMEOUT_TEXT=_env_float("OLLAMA_TIMEOUT_TEXT", 20),
+        OLLAMA_TIMEOUT_VISION=_env_float("OLLAMA_TIMEOUT_VISION", 60),
+        AI_BLOCK_THRESHOLD=_env_float("AI_BLOCK_THRESHOLD", 0.80),
+        AI_REVIEW_THRESHOLD=_env_float("AI_REVIEW_THRESHOLD", 0.50),
+        AI_CATEGORY_THRESHOLD=_env_float("AI_CATEGORY_THRESHOLD", 0.60),
     )
     if test_config:
         app.config.update(test_config)
@@ -59,6 +76,7 @@ def create_app(test_config=None):
     limiter.init_app(app)
 
     from backend.auth import auth
+    from backend.api.ai import ai_api
     from backend.api.auth import auth_api
     from backend.api.catalog import catalog_api
     from backend.api.geo import geo_api
@@ -67,6 +85,7 @@ def create_app(test_config=None):
 
     app.register_blueprint(auth)
     app.register_blueprint(auth_api)
+    app.register_blueprint(ai_api)
     app.register_blueprint(catalog_api)
     app.register_blueprint(geo_api)
     app.register_blueprint(pages)

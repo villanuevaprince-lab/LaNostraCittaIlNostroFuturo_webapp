@@ -103,11 +103,31 @@ la visibilità passa a `pubblica` dopo aver inserito l'allegato. Se il DB fallis
 il file appena scritto viene eliminato. La risposta è `201` e include la
 destinazione `/dashboard` con messaggio flash di pubblicazione.
 
-Le coordinate non sono lette dall'EXIF: arrivano dal pin e sono validate sul
-server. La colonna `DescrizioneAccessibile` esistente viene compilata
+Le coordinate arrivano dal pin e sono validate sul server (entro Milano); se
+mancano e la foto contiene un GPS EXIF valido a Milano, si usa quello (l'indirizzo
+resta obbligatorio). Con `AI_ENABLED=true` le categorie sono facoltative (l'IA ne
+propone fino a 3, `Origine='ia'`); senza categorie né proposta l'API risponde `400`.
+La risposta `201` contiene `report.visibilita` (`pubblica` oppure `bozza` se il
+comitato deve verificarlo) e `report.ia = {esito, messaggi}`. Un testo offensivo o
+d'odio ad alta confidenza è rifiutato con `400` e `{error}`. La colonna `DescrizioneAccessibile` esistente viene compilata
 automaticamente con il tipo di media e il titolo (non descrive dettagli visivi
-non verificabili). Le immagini sono risalvate senza EXIF. I video
+non verificabili). Le immagini sono risalvate senza EXIF (il GPS è letto prima). I video
 sono controllati tramite firme file MP4/WebM, non solo nome/estensione.
+
+### Supporto IA al form (login e CSRF richiesti)
+
+- `POST /api/ia/suggerisci-categorie`: JSON `titolo` (3–200) e `descrizione`
+  (10–5000). Risposta `{disponibile, categorie: [{id, nome, confidenza}]}`;
+  `{disponibile: false, categorie: []}` se l'IA è disattivata; `503` se Ollama non risponde.
+  Limite 10/minuto.
+- `POST /api/ia/analizza-foto`: multipart con `allegato` (immagine). Legge solo il GPS
+  EXIF, senza modello: `{gps: {latitude, longitude, in_milan} | null}`. Limite 20/minuto.
+
+`GET /api/moderazione/coda` aggiunge a ogni elemento `analisi_ia`
+(`tipo`, `esito`, `confidenza`, `revisione`, `motivo`); `?vista=bozza` mostra i
+contenuti in revisione. Approvare o rimuovere un contenuto chiude le analisi
+in attesa (`respinta` se pubblicato, `confermata` altrimenti). Le categorie del
+dettaglio includono `origine` (`utente`, `ia`, `moderatore`).
 
 ### `GET /api/segnalazioni/<id>`
 

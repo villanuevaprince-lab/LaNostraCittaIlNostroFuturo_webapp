@@ -7,6 +7,8 @@ const latitude = document.querySelector("#selected-latitude");
 const longitude = document.querySelector("#selected-longitude");
 const results = document.querySelector("#location-results");
 const searchInput = document.querySelector("#location-search");
+const aiEnabled = form.dataset.ai === "true";
+const categoryHint = document.querySelector("#category-hint");
 let pointVersion = 0;
 let picker;
 
@@ -115,6 +117,56 @@ Promise.all([
   fillCategories(),
 ]).catch((error) => { status.textContent = error.message; });
 
+// La posizione EXIF della foto precompila mappa e indirizzo, ma non sovrascrive una scelta già fatta.
+document.querySelector("#report-attachment").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file || !file.type.startsWith("image/") || file.size > 20 * 1024 * 1024 || latitude.value) return;
+  const body = new FormData();
+  body.append("allegato", file);
+  try {
+    const response = await fetch("/api/ia/analizza-foto", {
+      method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrf }, body,
+    });
+    const data = await response.json();
+    if (!response.ok || !data.gps?.in_milan || latitude.value) return;
+    picker?.setPoint(data.gps.latitude, data.gps.longitude);
+    await reverseAddress(data.gps.latitude, data.gps.longitude);
+    locationStatus.textContent = "Posizione letta dalla foto. Verifica l'indirizzo e correggi il segnaposto se serve.";
+  } catch (error) { /* la posizione resta da scegliere a mano */ }
+});
+
+document.querySelector("#suggest-categories")?.addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const title = form.elements.titolo.value.trim();
+  const description = form.elements.descrizione.value.trim();
+  if (title.length < 3 || description.length < 10) {
+    categoryHint.textContent = "Scrivi prima titolo e descrizione, poi chiedi il suggerimento.";
+    return;
+  }
+  button.disabled = true;
+  categoryHint.textContent = "Cerco le categorie più adatte…";
+  try {
+    const response = await fetch("/api/ia/suggerisci-categorie", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+      body: JSON.stringify({ titolo: title, descrizione: description }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Suggerimento non disponibile.");
+    if (!data.categorie.length) {
+      categoryHint.textContent = "Nessuna categoria sicura: sceglila tu dall'elenco.";
+      return;
+    }
+    const boxes = [...document.querySelectorAll("#category-options input")];
+    data.categorie.forEach((item) => {
+      const box = boxes.find((input) => Number(input.value) === item.id);
+      if (box && !box.checked && boxes.filter((input) => input.checked).length < 5) box.checked = true;
+    });
+    categoryHint.textContent = `Suggerite dall'IA: ${data.categorie.map((item) => `${item.nome} (${Math.round(item.confidenza * 100)}%)`).join(", ")}. Puoi cambiarle.`;
+  } catch (error) { categoryHint.textContent = error.message; }
+  finally { button.disabled = false; }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!latitude.value || !longitude.value) {
@@ -123,7 +175,7 @@ form.addEventListener("submit", async (event) => {
     return;
   }
   if (!form.reportValidity()) return;
-  if (!form.querySelector('input[name="categoria_ids"]:checked')) {
+  if (!aiEnabled && !form.querySelector('input[name="categoria_ids"]:checked')) {
     status.textContent = "Seleziona almeno una categoria.";
     form.querySelector('input[name="categoria_ids"]')?.focus();
     return;
@@ -131,7 +183,7 @@ form.addEventListener("submit", async (event) => {
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   form.setAttribute("aria-busy", "true");
-  status.textContent = "Pubblicazione in corso…";
+  status.textContent = aiEnabled ? "Controllo del contenuto e pubblicazione in corso…" : "Pubblicazione in corso…";
   try {
     const response = await fetch(form.action, {
       method: "POST", credentials: "same-origin",
@@ -139,6 +191,12 @@ form.addEventListener("submit", async (event) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Pubblicazione non riuscita.");
+    if (result.report?.visibilita === "bozza") {
+      // Mostriamo il motivo della revisione prima del reindirizzamento.
+      status.textContent = ["Contenuto ricevuto, ma non ancora pubblico.", ...(result.report.ia?.messaggi || [])].join(" ");
+      setTimeout(() => window.location.assign(result.redirect || "/"), 4000);
+      return;
+    }
     window.location.assign(result.redirect || "/");
   } catch (error) {
     status.textContent = error.message;

@@ -13,11 +13,15 @@
       <h1 id="report-title" class="page-title">Nuova segnalazione</h1>
       <p>Descrivi il problema o la proposta, scegli il luogo e allega una prova. Potrai seguirla nella tua area personale.</p>
       <p>Pubblicherai come <strong>{{ user.nome }} {{ user.cognome }}</strong>.</p>
+      {% if ai_enabled %}
+      <p class="mode-note">Il contenuto sarà pubblico subito dopo l'invio, salvo controllo del comitato quando l'analisi automatica lo ritiene necessario. Testo e foto sono analizzati da un modello IA installato sul nostro server, senza servizi esterni. Non caricare documenti con dati personali.</p>
+      {% else %}
       <p class="mode-note">Il contenuto sarà pubblico subito dopo l'invio. Non caricare documenti con dati personali.</p>
+      {% endif %}
       <noscript><p class="mode-note">Attiva JavaScript per inviare il modulo.</p></noscript>
     </div>
     <form id="report-form" method="post" action="{{ url_for('reports.post_report') }}"
-          enctype="multipart/form-data" data-report-form>
+          enctype="multipart/form-data" data-report-form data-ai="{{ 'true' if ai_enabled else 'false' }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="field">Tipo
         <select name="tipo" required>
@@ -42,9 +46,18 @@
         </select>
       </label>
       <fieldset class="category-fieldset">
+        {% if ai_enabled %}
+        <legend>Categorie (fino a 5, facoltative)</legend>
+        {% else %}
         <legend>Categorie (da 1 a 5)</legend>
+        {% endif %}
         <div id="category-options" class="tag-options">Caricamento categorie…</div>
-        <p class="hint">Seleziona tutte le categorie pertinenti.</p>
+        {% if ai_enabled %}
+        <p class="hint" id="category-hint">Non sai quale scegliere? Lasciale vuote: le propone l'IA in base al testo.</p>
+        <button id="suggest-categories" class="button button-secondary" type="button">Suggerisci categorie</button>
+        {% else %}
+        <p class="hint" id="category-hint">Seleziona tutte le categorie pertinenti.</p>
+        {% endif %}
       </fieldset>
       <div class="location-picker">
         <label class="field" for="location-search">Cerca il luogo a Milano
@@ -62,7 +75,7 @@
         <input type="hidden" name="longitude" id="selected-longitude">
       </div>
       <label class="field">Foto o video (obbligatorio)
-        <input name="allegato" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
+        <input name="allegato" id="report-attachment" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
       </label>
       <small>Massimo 20 MB. Formati: JPEG, PNG, WebP, MP4 o WebM.</small>
       <button class="button" type="submit">Pubblica contenuto</button>

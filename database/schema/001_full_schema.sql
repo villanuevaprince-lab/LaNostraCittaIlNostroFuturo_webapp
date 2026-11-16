@@ -203,7 +203,9 @@ CREATE TABLE IF NOT EXISTS ANALISI_IA (
   CONSTRAINT fk_analisi_allegato FOREIGN KEY (IdAllegato) REFERENCES ALLEGATO (IdAllegato),
   CONSTRAINT fk_analisi_moderatore FOREIGN KEY (IdModeratoreRevisione) REFERENCES MODERATORE (IdUtente),
   CONSTRAINT chk_analisi_confidenza CHECK (Confidenza IS NULL OR Confidenza BETWEEN 0 AND 1),
-  INDEX idx_analisi_revisione (StatoRevisione, DataAnalisi)
+  CONSTRAINT chk_analisi_revisione CHECK (StatoRevisione IN ('da_revisionare', 'confermata', 'respinta', 'non_necessaria')),
+  INDEX idx_analisi_revisione (StatoRevisione, DataAnalisi),
+  INDEX idx_analisi_segnalazione (IdSegnalazione, TipoAnalisi)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS EVENTO_LOG (
