@@ -26,6 +26,7 @@ def app(tmp_path, monkeypatch):
         "RATELIMIT_ENABLED": False,
         "SESSION_COOKIE_SECURE": False,
         "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+        "AI_ENABLED": False,  # nessun test raggiunge Ollama; i test IA lo attivano esplicitamente
     })
 
 

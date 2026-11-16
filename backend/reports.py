@@ -32,7 +32,7 @@ def canonical_id(report_id):
 @reports.get("/reports/new")
 @login_required
 def new_report():
-    return render_template("report_new.html", user=g.user)
+    return render_template("report_new.html", user=g.user, ai_enabled=bool(current_app.config.get("AI_ENABLED")))
 
 
 @reports.get("/reports/<int:report_id>")
@@ -101,7 +101,11 @@ def post_report():
         if error.errno == 1062:
             return jsonify(error="Operazione duplicata."), 409
         raise
-    flash("Contenuto pubblicato. Lo trovi nella tua area personale e nella bacheca.", "success")
+    if report.get("visibilita") == "bozza":
+        flash("Contenuto ricevuto: il comitato lo controllerà prima della pubblicazione. "
+              "Lo trovi nella tua area personale.", "success")
+    else:
+        flash("Contenuto pubblicato. Lo trovi nella tua area personale e nella bacheca.", "success")
     return jsonify(ok=True, report=report, redirect="/dashboard"), 201
 
 

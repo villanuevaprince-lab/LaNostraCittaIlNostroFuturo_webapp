@@ -15,7 +15,12 @@ fetch(`/api/segnalazioni/${detail.dataset.reportId}`, { credentials: "same-origi
     const tags = document.querySelector("#detail-categories");
     (report.categorie || []).forEach((category) => {
       const tag = document.createElement("span"); tag.className = "category-tag";
-      tag.textContent = category.nome; tags.append(tag);
+      tag.textContent = category.nome;
+      if (category.origine === "ia") {
+        // Il bordo tratteggiato e il testo evitano di affidarsi solo al colore.
+        tag.classList.add("category-tag-ai"); tag.title = "Categoria suggerita dall'IA"; tag.textContent += " · IA";
+      }
+      tags.append(tag);
     });
     document.querySelector("#detail-address").textContent = report.indirizzo || "Indirizzo non indicato";
     if (report.allegato_id && report.visibilita !== "rimossa") {

@@ -2,6 +2,7 @@ import hashlib
 import json
 
 from backend.database import database_cursor
+from backend.repositories.analysis import ANALYSIS_JSON_SQL, parse_analyses, review_analyses, save_analyses
 from backend.repositories.notifications import notify
 from datetime import datetime, timedelta
 
@@ -20,6 +21,9 @@ from backend.lifecycle import STATE_TRANSITIONS, states_for
 
 def create_report_record(data, author, upload):
     initial_state = "inviata" if data["tipo"] == "segnalazione" else "in_valutazione"
+    ai = data.get("ia") or {}
+    in_review = ai.get("esito") == "bozza"
+    note = "In revisione dal comitato (analisi IA)" if in_review else "Pubblicazione del contenuto"
 
     with database_cursor(write=True) as cursor:
         cursor.execute("""INSERT INTO SEGNALAZIONE
@@ -39,23 +43,32 @@ def create_report_record(data, author, upload):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (report_id, author["id"], upload["mime"], upload["reference"],
              upload["original_name"], upload["size"], upload["sha256"], upload["accessible_description"]))
-        write_attachment_content(cursor, cursor.lastrowid, upload["content"])
+        attachment_id = cursor.lastrowid
+        write_attachment_content(cursor, attachment_id, upload["content"])
         for category_id in data["categorie"]:
             cursor.execute("""INSERT INTO SEGNALAZIONE_CATEGORIA
                 (IdSegnalazione, IdCategoria, Origine) VALUES (%s, %s, 'utente')""",
                 (report_id, category_id))
-        # Il trigger di pubblicazione richiede che l'allegato sia già presente.
-        cursor.execute("UPDATE SEGNALAZIONE SET Visibilita='pubblica' WHERE IdSegnalazione=%s", (report_id,))
+        for item in ai.get("categorie_ia", []):
+            cursor.execute("""INSERT INTO SEGNALAZIONE_CATEGORIA
+                (IdSegnalazione, IdCategoria, Origine, Confidenza) VALUES (%s, %s, 'ia', %s)""",
+                (report_id, item["id"], item["confidenza"]))
+        save_analyses(cursor, report_id, attachment_id, ai.get("analisi", []))
+        if not in_review:
+            # Il trigger di pubblicazione richiede che l'allegato sia già presente.
+            cursor.execute("UPDATE SEGNALAZIONE SET Visibilita='pubblica' WHERE IdSegnalazione=%s", (report_id,))
         cursor.execute("""INSERT INTO STORICO_STATO
             (IdSegnalazione, StatoPrecedente, StatoSuccessivo, IdAutoreModifica, Motivazione)
-            VALUES (%s, NULL, %s, %s, 'Pubblicazione del contenuto')""",
-            (report_id, initial_state, author["id"]))
+            VALUES (%s, NULL, %s, %s, %s)""",
+            (report_id, initial_state, author["id"], note))
         cursor.execute("""INSERT INTO EVENTO_LOG
             (IdEsecutore, TipoAzione, Esito, Dettagli, IdSegnalazione)
-            VALUES (%s, 'creazione_segnalazione', 'successo', 'Contenuto pubblicato con allegato', %s)""",
-            (author["id"], report_id))
+            VALUES (%s, 'creazione_segnalazione', 'successo', %s, %s)""",
+            (author["id"], "Contenuto in revisione, allegato presente" if in_review
+             else "Contenuto pubblicato con allegato", report_id))
     return {"id": report_id, "titolo": data["titolo"], "stato": initial_state,
-            "visibilita": "pubblica"}
+            "visibilita": "bozza" if in_review else "pubblica",
+            "ia": {"esito": ai.get("esito", "pubblica"), "messaggi": ai.get("messaggi", [])}}
 
 
 def list_report_records(search="", neighborhood_id=None, category_ids=None, state=None,
@@ -100,7 +113,7 @@ def list_report_records(search="", neighborhood_id=None, category_ids=None, stat
         s.IdQuartiere AS quartiere_id, q.Nome AS quartiere,
         (SELECT COUNT(*) FROM EVENTO_LOG e WHERE e.IdSegnalazione=s.IdSegnalazione
          AND e.TipoAzione='ritiro_segnalazione') AS ritirata_autore,
-        (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', cat.IdCategoria, 'nome', cat.Nome))
+        (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', cat.IdCategoria, 'nome', cat.Nome, 'origine', sc.Origine))
          FROM SEGNALAZIONE_CATEGORIA sc JOIN CATEGORIA cat ON cat.IdCategoria=sc.IdCategoria
          WHERE sc.IdSegnalazione=s.IdSegnalazione) AS categorie_json,
         (SELECT COUNT(*) FROM SOSTEGNO so WHERE so.IdSegnalazione=s.IdSegnalazione AND so.DataRitiro IS NULL) AS sostegni,
@@ -140,7 +153,7 @@ def get_report_record(report_id):
             s.Latitudine AS latitude, s.Longitudine AS longitude,
             s.IdAutore AS autore_id, q.Nome AS quartiere,
             CONCAT(u.Nome, ' ', u.Cognome) AS autore,
-            (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', c.IdCategoria, 'nome', c.Nome))
+            (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', c.IdCategoria, 'nome', c.Nome, 'origine', sc.Origine))
              FROM SEGNALAZIONE_CATEGORIA sc JOIN CATEGORIA c ON c.IdCategoria=sc.IdCategoria
              WHERE sc.IdSegnalazione=s.IdSegnalazione) AS categorie_json,
             (SELECT a.IdAllegato FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione
@@ -282,6 +295,7 @@ def moderate_reports(ids, moderator_id, visibility):
                         unchanged += 1  # il ritiro dell'autore resta definitivo
                         continue
                 cursor.execute("UPDATE SEGNALAZIONE SET Visibilita=%s WHERE IdSegnalazione=%s", (visibility, report_id))
+                review_analyses(cursor, report_id, moderator_id, visibility)
                 cursor.execute("""INSERT INTO EVENTO_LOG
                     (IdEsecutore, TipoAzione, Esito, Dettagli, IdSegnalazione)
                     VALUES (%s, 'moderazione_segnalazione', 'successo', %s, %s)""",
@@ -329,7 +343,8 @@ def list_moderation_reports(cursor_id=None, visibility="tutte", limit=25):
             s.Stato AS stato, s.Visibilita AS visibilita, s.duplicate_of_id, s.DataCreazione AS data_creazione,
             CONCAT(u.Nome, ' ', u.Cognome) AS autore, u.IdUtente AS autore_id,
             (SELECT COUNT(*) FROM EVENTO_LOG e WHERE e.IdSegnalazione=s.IdSegnalazione
-             AND e.TipoAzione='ritiro_segnalazione') AS ritirata_autore
+             AND e.TipoAzione='ritiro_segnalazione') AS ritirata_autore,
+            """ + ANALYSIS_JSON_SQL + """
             FROM SEGNALAZIONE s JOIN UTENTE u ON u.IdUtente=s.IdAutore
             WHERE """ + visibility_clause + ("" if visibility in {"duplicati", "rimossa"} else " AND s.duplicate_of_id IS NULL") + """ AND (%s IS NULL OR s.IdSegnalazione < %s)
             ORDER BY s.IdSegnalazione DESC LIMIT %s"""
@@ -339,6 +354,7 @@ def list_moderation_reports(cursor_id=None, visibility="tutte", limit=25):
     rows = rows[:limit]
     for row in rows:
         row["data_creazione"] = row["data_creazione"].isoformat(timespec="seconds")
+        row["analisi_ia"] = parse_analyses(row.pop("analisi_json", None))
     return {"items": rows, "next_cursor": rows[-1]["id"] if more and rows else None}
 
 

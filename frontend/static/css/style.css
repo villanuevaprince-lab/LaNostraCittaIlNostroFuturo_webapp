@@ -415,3 +415,8 @@ nav a:hover, .report-card a:hover, .moderation-row a:hover { text-decoration: un
 .thread-level-2, .thread-level-3 { margin-left:2rem; border-left:2px solid #cbd5e1; padding-left:.75rem; }
 .comment-item > a { display:block; margin-block:.4rem; }
 .comment-item > button { margin:.25rem .4rem .25rem 0; }
+
+/* Analisi IA: nota per i moderatori e categorie suggerite dal modello. */
+.ai-note { margin: 8px 0 0; padding: 8px 10px; border-left: 3px solid var(--primary); background: #f5f8f8; color: var(--primary-dark); font-size: .88rem; line-height: 1.4; }
+.category-tag-ai { border-style: dashed; }
+#suggest-categories { margin-top: 8px; }

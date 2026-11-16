@@ -3,6 +3,7 @@
 from io import BytesIO
 from pathlib import Path
 import hashlib
+import math
 import secrets
 
 from PIL import Image, UnidentifiedImageError
@@ -32,6 +33,42 @@ def _mime_from_signature(data):
     return None
 
 
+def _dms_to_degrees(values, reference):
+    degrees, minutes, seconds = (float(value) for value in values)
+    result = degrees + minutes / 60 + seconds / 3600
+    if not math.isfinite(result):
+        raise ValueError("coordinata non valida")
+    return -result if reference in {"S", "W", b"S", b"W"} else result
+
+
+def extract_gps(raw):
+    """Latitudine e longitudine dall'EXIF originale, oppure None.
+
+    Va chiamata sui byte caricati dall'utente, prima del risalvataggio che toglie l'EXIF.
+    """
+    try:
+        gps = Image.open(BytesIO(raw)).getexif().get_ifd(0x8825)
+        latitude = _dms_to_degrees(gps[2], gps[1])
+        longitude = _dms_to_degrees(gps[4], gps[3])
+    except (KeyError, TypeError, ValueError, ZeroDivisionError, OSError, UnidentifiedImageError):
+        return None
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180) or (latitude, longitude) == (0, 0):
+        return None
+    return {"latitude": round(latitude, 6), "longitude": round(longitude, 6)}
+
+
+def read_exif_location(file_storage):
+    """Posizione EXIF di una foto già scelta nel form, senza salvarla."""
+    if file_storage is None or not file_storage.filename:
+        raise UploadError("Scegli una foto.")
+    raw = file_storage.stream.read(MAX_FILE_BYTES + 1)
+    if not raw or len(raw) > MAX_FILE_BYTES:
+        raise UploadError("Il file è vuoto o supera il limite di 20 MB.")
+    if _mime_from_signature(raw) not in IMAGE_TYPES:
+        return None
+    return extract_gps(raw)
+
+
 def save_upload(file_storage, report_title):
     if file_storage is None or not file_storage.filename:
         raise UploadError("Allega una foto o un breve video.")
@@ -43,7 +80,9 @@ def save_upload(file_storage, report_title):
     mime = _mime_from_signature(raw)
     if mime not in IMAGE_TYPES and mime not in VIDEO_TYPES:
         raise UploadError("Formato non supportato: usa JPEG, PNG, WebP, MP4 o WebM.")
+    exif_gps = None
     if mime in IMAGE_TYPES:
+        exif_gps = extract_gps(raw)
         try:
             image = Image.open(BytesIO(raw))
             image.verify()
@@ -73,7 +112,7 @@ def save_upload(file_storage, report_title):
         "content": raw, "reference": filename, "mime": mime,
         "original_name": Path(file_storage.filename).name[:255],
         "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
-        "accessible_description": description,
+        "accessible_description": description, "exif_gps": exif_gps,
     }
 
 

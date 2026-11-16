@@ -84,6 +84,21 @@ async function permanentBan(id, name) {
   } catch (error) { status.textContent = error.message; }
 }
 
+const analysisLabels = { moderazione_testo: "Testo", classificazione: "Categorie", coerenza_immagine: "Foto" };
+
+// Segnalazioni dell'IA ancora da valutare: testo sempre inserito con textContent.
+function analysisNote(report) {
+  const pending = (report.analisi_ia || []).filter((item) => item.revisione === "da_revisionare");
+  if (!pending.length) return null;
+  const note = document.createElement("p"); note.className = "ai-note";
+  note.textContent = "Analisi IA · " + pending.map((item) => {
+    const confidence = item.confidenza == null ? "" : ` (${Math.round(item.confidenza * 100)}%)`;
+    const reason = item.motivo ? ` — ${item.motivo}` : "";
+    return `${analysisLabels[item.tipo] || item.tipo}: ${String(item.esito).replaceAll("_", " ")}${confidence}${reason}`;
+  }).join(" · ");
+  return note;
+}
+
 function renderReport(report, states) {
   const row = document.createElement("article"); row.className = "moderation-row";
   row.dataset.reportId = report.id;
@@ -110,6 +125,8 @@ function renderReport(report, states) {
   meta.textContent = `${report.tipo} · ${report.autore} · ${report.data_creazione.slice(0, 10)} · ${visibilityLabel}`;
   const badge = document.createElement("span"); setStateBadge(badge, report);
   body.append(heading, badge, meta);
+  const aiNote = analysisNote(report);
+  if (aiNote) body.append(aiNote);
   const controls = document.createElement("div"); controls.className = "toolbar";
   if (report.visibilita !== "pubblica" && !check.disabled) controls.append(button(
     report.visibilita === "rimossa" ? "Reinserisci" : "Approva", "button",

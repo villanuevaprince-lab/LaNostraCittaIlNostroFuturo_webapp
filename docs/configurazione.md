@@ -90,6 +90,34 @@ di geocodifica. Le richieste di ricerca sono effettuate solo dopo un'azione
 esplicita dell'utente e sono limitate; per molti utenti configura un servizio
 di geocoding/tile dedicato.
 
+### IA locale con Ollama (facoltativa)
+
+Installa Ollama sulla stessa macchina dell'app e scarica i modelli:
+
+```powershell
+ollama pull qwen2.5:7b
+ollama pull qwen2.5vl:7b
+```
+
+Poi, nel `.env` (valori di default mostrati; vedi `.env.example`):
+
+```dotenv
+AI_ENABLED=true
+OLLAMA_URL=http://localhost:11434
+OLLAMA_TEXT_MODEL=qwen2.5:7b
+OLLAMA_VISION_MODEL=qwen2.5vl:7b
+OLLAMA_TIMEOUT_TEXT=20
+OLLAMA_TIMEOUT_VISION=60
+AI_BLOCK_THRESHOLD=0.80
+AI_REVIEW_THRESHOLD=0.50
+AI_CATEGORY_THRESHOLD=0.60
+```
+
+`AI_ENABLED=false` ripristina il comportamento senza IA. Se Ollama non è
+raggiungibile l'invio prosegue senza bloccare i cittadini e le analisi risultano
+`non_disponibile`. Il primo invio dopo l'avvio può superare il timeout mentre il
+modello si carica: aumenta `OLLAMA_TIMEOUT_*` o scalda i modelli con una prova.
+
 ## 4. Verificare lo schema Aiven prima delle migrazioni
 
 Fai un backup dal pannello Aiven o dal client MySQL. Poi verifica lo schema:
@@ -109,6 +137,7 @@ Se il database contiene solo le tabelle iniziali, applica nell'ordine:
 3. controlla i dati e applica `database/migrations/003_enforce_attachment_publication.sql`
 4. `database/migrations/004_civic_features.sql`
 5. `database/migrations/005_shared_attachment_content.sql`
+6. `database/migrations/008_ai_analysis.sql` (dopo 006 e 007; oppure `python -m backend.apply_ai_migration`)
 
 Le migrazioni non sono completamente idempotenti: **non rilanciarle** se le
 colonne, gli indici o i trigger sono già presenti. In particolare la 004 deve
