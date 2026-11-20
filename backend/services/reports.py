@@ -2,7 +2,7 @@ from decimal import Decimal, InvalidOperation
 
 from backend.api.geo import in_milan
 
-from backend.repositories.catalog import list_categories, valid_categories, valid_neighborhood
+from backend.repositories.catalog import valid_categories, valid_neighborhood
 from backend.repositories.reports import create_report_record
 from backend.services import ai as ai_service
 from backend.services.uploads import remove_upload, save_upload
@@ -24,7 +24,7 @@ def create_report(data, author, uploaded_file):
     except (TypeError, ValueError):
         raise ReportValidationError("Quartiere non valido.")
     raw_categories = data.get("categoria_ids") or ([data.get("categoria_id")] if data.get("categoria_id") else [])
-    # Con l'IA attiva la categoria può mancare: la propone il modello (o si chiede dopo).
+    # Con la verifica AI attiva la categoria può mancare: la propone il modello durante la verifica.
     ai_active = ai_service.enabled()
     if not isinstance(raw_categories, list) or not (0 if ai_active else 1) <= len(raw_categories) <= MAX_CATEGORIES:
         raise ReportValidationError("Seleziona da una a cinque categorie.")
@@ -68,32 +68,18 @@ def create_report(data, author, uploaded_file):
         if not gps_in_milan:
             raise ReportValidationError("Seleziona il punto sulla mappa.")
         latitude, longitude = Decimal(str(gps["latitude"])), Decimal(str(gps["longitude"]))
-    ai = _analyze(title, description, category_ids, upload, gps, gps_in_milan) if ai_active else None
     record = {
         "tipo": report_type, "soglia_sostegni": threshold, "titolo": title, "descrizione": description,
         "indirizzo": address, "quartiere_id": neighborhood, "categorie": category_ids,
         "latitude": latitude.quantize(Decimal("0.000001")),
         "longitude": longitude.quantize(Decimal("0.000001")),
     }
-    if ai:
-        record["ia"] = ai
+    if ai_active:
+        # La verifica AI avviene dopo, in coda: il contenuto resta non pubblico fino all'esito.
+        record["verifica"] = True
     try:
         return create_report_record(record, author, upload)
     except Exception:
         remove_upload(upload)
         raise
 
-
-def _analyze(title, description, category_ids, upload, gps, gps_in_milan):
-    ai = ai_service.analyze_report(title, description, list_categories(), set(category_ids), upload)
-    if ai["esito"] == "blocca":
-        raise ReportValidationError(ai["messaggi"][0])
-    ai["categorie_ia"] = ai["categorie_ia"][:max(0, MAX_CATEGORIES - len(category_ids))]
-    if not category_ids and not ai["categorie_ia"]:
-        raise ReportValidationError("Non siamo riusciti a scegliere la categoria: selezionane almeno una.")
-    if gps:
-        ai["analisi"].append({
-            "tipo": "exif_gps", "modello": "exif", "esito": "in_milano" if gps_in_milan else "fuori_milano",
-            "confidenza": None, "risultato": gps, "revisione": False, "allegato": True,
-        })
-    return ai

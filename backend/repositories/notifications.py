@@ -2,17 +2,24 @@
 from backend.database import database_cursor
 
 
-def notify(cursor, recipient, actor, report_id, kind, comment_id=None):
-    if recipient and recipient != actor:
+def notify(cursor, recipient, actor, report_id, kind, comment_id=None, message=None):
+    if not recipient or recipient == actor:
+        return
+    if message is None:
         cursor.execute("""INSERT INTO NOTIFICA
             (IdDestinatario, IdSegnalazione, IdCommento, Tipo) VALUES (%s,%s,%s,%s)""",
             (recipient, report_id, comment_id, kind))
+    else:
+        # Esiti della verifica: la motivazione leggibile viaggia con la notifica.
+        cursor.execute("""INSERT INTO NOTIFICA
+            (IdDestinatario, IdSegnalazione, IdCommento, Tipo, Messaggio) VALUES (%s,%s,%s,%s,%s)""",
+            (recipient, report_id, comment_id, kind, message[:1000]))
 
 
 def inbox(user_id, before=None, limit=20):
     with database_cursor() as cursor:
         cursor.execute("""SELECT IdNotifica AS id, IdSegnalazione AS report_id,
-            IdCommento AS comment_id, Tipo AS tipo, Letta AS letta, DataCreazione AS data
+            IdCommento AS comment_id, Tipo AS tipo, Messaggio AS messaggio, Letta AS letta, DataCreazione AS data
             FROM NOTIFICA WHERE IdDestinatario=%s AND (%s IS NULL OR IdNotifica < %s)
             ORDER BY IdNotifica DESC LIMIT %s""", (user_id, before, before, limit + 1))
         rows = cursor.fetchall()

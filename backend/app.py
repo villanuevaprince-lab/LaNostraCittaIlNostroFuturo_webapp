@@ -5,6 +5,7 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 
+import click
 import mysql.connector
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
@@ -68,9 +69,17 @@ def create_app(test_config=None):
         OLLAMA_VISION_MODEL=os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:7b"),
         OLLAMA_TIMEOUT_TEXT=_env_float("OLLAMA_TIMEOUT_TEXT", 20),
         OLLAMA_TIMEOUT_VISION=_env_float("OLLAMA_TIMEOUT_VISION", 60),
-        AI_BLOCK_THRESHOLD=_env_float("AI_BLOCK_THRESHOLD", 0.80),
-        AI_REVIEW_THRESHOLD=_env_float("AI_REVIEW_THRESHOLD", 0.50),
-        AI_CATEGORY_THRESHOLD=_env_float("AI_CATEGORY_THRESHOLD", 0.60),
+        # Verifica AI prima della pubblicazione (coda + worker). Soglie: vedi services/verification_rules.py
+        VERIFICA_MODELLO=os.getenv("VERIFICA_MODELLO") or os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:7b"),
+        VERIFICA_TIMEOUT=_env_float("VERIFICA_TIMEOUT", 120),
+        VERIFICA_SOGLIA_ALTA=_env_float("VERIFICA_SOGLIA_ALTA", 0.90),
+        VERIFICA_SOGLIA_BASSA=_env_float("VERIFICA_SOGLIA_BASSA", 0.70),
+        VERIFICA_MAX_TENTATIVI=_env_int("VERIFICA_MAX_TENTATIVI", 5),
+        VERIFICA_BACKOFF_BASE=_env_int("VERIFICA_BACKOFF_BASE", 30),
+        VERIFICA_BACKOFF_MAX=_env_int("VERIFICA_BACKOFF_MAX", 3600),
+        VERIFICA_INTERVALLO=_env_float("VERIFICA_INTERVALLO", 10),
+        VERIFICA_LEASE_SECONDI=_env_int("VERIFICA_LEASE_SECONDI", 900),
+        VERIFICA_MAX_REINVII=_env_int("VERIFICA_MAX_REINVII", 3),
         # Email: SMTP se MAIL_SERVER è impostato, altrimenti file .eml locali (sviluppo).
         MAIL_BACKEND=os.getenv("MAIL_BACKEND") or ("smtp" if os.getenv("MAIL_SERVER") else "file"),
         MAIL_SERVER=os.getenv("MAIL_SERVER", ""),
@@ -106,6 +115,7 @@ def create_app(test_config=None):
 
     from backend.auth import auth
     from backend.account import account
+    from backend.verification_api import verification_api
     from backend.api.ai import ai_api
     from backend.api.auth import auth_api
     from backend.api.catalog import catalog_api
@@ -116,6 +126,7 @@ def create_app(test_config=None):
     app.register_blueprint(auth)
     app.register_blueprint(auth_api)
     app.register_blueprint(account)
+    app.register_blueprint(verification_api)
     app.register_blueprint(ai_api)
     app.register_blueprint(catalog_api)
     app.register_blueprint(geo_api)
@@ -149,6 +160,22 @@ def create_app(test_config=None):
             429: "Troppi tentativi. Attendi prima di riprovare.",
         }
         return error_response(messages.get(error.code, "Richiesta non riuscita."), error.code)
+
+    from backend.services.verification_rules import Thresholds
+    Thresholds(alta=app.config["VERIFICA_SOGLIA_ALTA"], bassa=app.config["VERIFICA_SOGLIA_BASSA"])  # valida all'avvio
+
+    @app.cli.command("verifica-worker")
+    @click.option("--once", is_flag=True, help="Elabora al massimo un job ed esce.")
+    @click.option("--intervallo", type=float, default=None, help="Secondi di attesa con coda vuota o modello assente.")
+    def verification_worker_command(once, intervallo):
+        """Worker della coda di verifica AI (più istanze possono girare insieme)."""
+        import logging
+        from backend.services.verification_worker import run_forever, run_once
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        if once:
+            click.echo(run_once())
+        else:
+            run_forever(intervallo or app.config["VERIFICA_INTERVALLO"])
 
     @app.after_request
     def security_headers(response):

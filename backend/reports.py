@@ -88,7 +88,8 @@ def my_reports():
     rows = list_report_records(author_id=g.user["id"], viewer_id=g.user["id"],
                                visibility_filter=view, cursor_id=cursor, limit=26)
     page = rows[:25]
-    return jsonify(items=page, next_cursor=page[-1]["id"] if len(rows) > 25 else None)
+    return jsonify(items=page, next_cursor=page[-1]["id"] if len(rows) > 25 else None,
+                   max_reinvii=current_app.config["VERIFICA_MAX_REINVII"])
 
 
 @reports.post("/api/segnalazioni")
@@ -107,7 +108,10 @@ def post_report():
         if error.errno == 1062:
             return jsonify(error="Operazione duplicata."), 409
         raise
-    if report.get("visibilita") == "bozza":
+    if report.get("stato_verifica") == "in_valutazione":
+        flash("Contenuto ricevuto: è in fase di valutazione automatica e non è ancora pubblico. "
+              "Riceverai una notifica con l'esito; lo stato è visibile nella tua area personale.", "success")
+    elif report.get("visibilita") == "bozza":
         flash("Contenuto ricevuto: il comitato lo controllerà prima della pubblicazione. "
               "Lo trovi nella tua area personale.", "success")
     else:

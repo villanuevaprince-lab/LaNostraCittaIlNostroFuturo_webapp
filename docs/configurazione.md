@@ -122,24 +122,46 @@ ollama pull qwen2.5:7b
 ollama pull qwen2.5vl:7b
 ```
 
-Poi, nel `.env` (valori di default mostrati; vedi `.env.example`):
+Poi, nel `.env` (valori di default; descrizioni in `.env.example`):
 
 ```dotenv
 AI_ENABLED=true
 OLLAMA_URL=http://localhost:11434
-OLLAMA_TEXT_MODEL=qwen2.5:7b
-OLLAMA_VISION_MODEL=qwen2.5vl:7b
-OLLAMA_TIMEOUT_TEXT=20
-OLLAMA_TIMEOUT_VISION=60
-AI_BLOCK_THRESHOLD=0.80
-AI_REVIEW_THRESHOLD=0.50
-AI_CATEGORY_THRESHOLD=0.60
+VERIFICA_MODELLO=qwen2.5vl:7b
+VERIFICA_TIMEOUT=120
+VERIFICA_SOGLIA_ALTA=0.90
+VERIFICA_SOGLIA_BASSA=0.70
+VERIFICA_MAX_TENTATIVI=5
+VERIFICA_BACKOFF_BASE=30
+VERIFICA_BACKOFF_MAX=3600
+VERIFICA_INTERVALLO=10
+VERIFICA_LEASE_SECONDI=900
+VERIFICA_MAX_REINVII=3
 ```
 
-`AI_ENABLED=false` ripristina il comportamento senza IA. Se Ollama non è
-raggiungibile l'invio prosegue senza bloccare i cittadini e le analisi risultano
-`non_disponibile`. Il primo invio dopo l'avvio può superare il timeout mentre il
-modello si carica: aumenta `OLLAMA_TIMEOUT_*` o scalda i modelli con una prova.
+Avvia il worker accanto all'applicazione, dalla radice del progetto (puoi avviarne più
+di uno: la coda usa `SKIP LOCKED`):
+
+```powershell
+flask --app backend.app verifica-worker
+```
+
+`--once` elabora un solo job (utile per prove). Le soglie sono validate all'avvio
+(`0 <= bassa <= alta <= 1`). Se Ollama non risponde i contenuti restano in attesa
+e vengono ripresi da soli. Il primo job dopo l'avvio può superare il timeout mentre il
+modello si carica: conta come errore transitorio e viene ritentato.
+
+### Test della coda su MySQL (facoltativi)
+
+`backend/tests/test_verification_mysql.py` prova `SKIP LOCKED` con due worker,
+modello assente, ripresa dopo un crash, retry, reinvii, ricorso e override su un
+MySQL 8 **locale**. Girano solo con `VERIFICA_MYSQL_TEST=1`, `DB_HOST=localhost` e un
+`DB_NAME` che finisce con `_test` (mai su Aiven). Crea il database con lo schema
+001 (sostituendo il nome), i seed, le migrazioni 005–007 e la 010, poi:
+
+```bash
+VERIFICA_MYSQL_TEST=1 DB_NAME=nostra_citta_test python -m pytest backend/tests/test_verification_mysql.py
+```
 
 ## 4. Verificare lo schema Aiven prima delle migrazioni
 
@@ -166,6 +188,12 @@ Se il database contiene solo le tabelle iniziali, applica nell'ordine:
    o se esistono indirizzi senza `@`, poi imposta la collation `utf8mb4_0900_ai_ci` e il
    vincolo `chk_utente_email_normalizzata`. Su un database creato dallo schema 001
    aggiornato risulta già applicata.
+8. `database/migrations/010_ai_verification_pipeline.sql` con
+   `python -m backend.apply_verification_migration` (dopo la 007, anche per un database
+   nuovo creato dallo schema 001): aggiunge `StatoVerifica`, i contatori di reinvii e ricorsi,
+   le tabelle `VERIFICA_JOB`, `VERIFICA_ESITO`, `VERIFICA_VIOLAZIONE`, `DECISIONE_VERIFICA`
+   e `NOTIFICA.Messaggio`. I contenuti esistenti restano pubblicati; le vecchie bozze
+   diventano «da revisionare». È necessaria per questa versione del codice.
 
 Le migrazioni non sono completamente idempotenti: **non rilanciarle** se le
 colonne, gli indici o i trigger sono già presenti. In particolare la 004 deve

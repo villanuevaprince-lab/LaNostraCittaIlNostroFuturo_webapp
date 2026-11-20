@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Verifica AI — La Nostra Città{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/verification-moderation.js') }}" defer></script>{% endblock %}
+{% block content %}
+  <section class="hero"><div><p class="eyebrow">Gestione civica</p><h1>Verifica AI dei contenuti</h1>
+    <p>Ogni segnalazione o proposta passa da una verifica automatica. Qui decidi i casi dubbi e i ricorsi e puoi ribaltare la decisione del modello: ogni azione richiede un motivo e resta nello storico.</p></div>
+    <a class="button button-secondary" href="{{ url_for('pages.moderation') }}">Coda di moderazione</a></section>
+  <section class="panel">
+    <div class="section-heading"><div><p class="eyebrow">Coda prioritaria</p><h2>Contenuti per stato di verifica</h2></div>
+      <label class="field">Vista<select id="verification-filter">
+        <option value="priorita">Da decidere (da revisionare e ricorsi)</option>
+        <option value="da_revisionare">Da revisionare</option>
+        <option value="in_ricorso">In ricorso</option>
+        <option value="in_valutazione">In valutazione</option>
+        <option value="in_attesa_modello">In attesa del modello</option>
+        <option value="pubblicata">Pubblicate</option>
+        <option value="respinta_automatica">Respinte automaticamente</option>
+        <option value="respinta_moderatore">Respinte dai moderatori</option>
+        <option value="tutte">Tutte</option>
+      </select></label></div>
+    <ul id="verification-counts" class="verification-counts" aria-label="Contenuti per stato"></ul>
+    <p id="verification-status" class="status" role="status" aria-live="polite">Caricamento…</p>
+    <div id="verification-list" class="moderation-list"></div>
+    <button id="verification-next" class="button button-secondary" type="button" hidden>Carica altri</button>
+  </section>
+{% endblock %}

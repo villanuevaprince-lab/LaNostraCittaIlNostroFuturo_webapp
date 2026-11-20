@@ -2,7 +2,9 @@ import hashlib
 import json
 
 from backend.database import database_cursor
-from backend.repositories.analysis import ANALYSIS_JSON_SQL, parse_analyses, review_analyses, save_analyses
+from backend.repositories.analysis import ANALYSIS_JSON_SQL, parse_analyses, review_analyses
+from backend.repositories.verification import enqueue as enqueue_verification
+from backend.repositories.verification import record_decision as record_verification_decision
 from backend.repositories.notifications import notify
 from datetime import datetime, timedelta
 
@@ -20,18 +22,24 @@ from backend.lifecycle import STATE_TRANSITIONS, states_for
 
 
 def create_report_record(data, author, upload):
+    """Salva contenuto e allegato in una transazione.
+
+    Con la verifica AI attiva (data["verifica"]) il contenuto resta non pubblico
+    (Visibilita='bozza', StatoVerifica='in_valutazione') e nasce il job in coda nella stessa
+    transazione: se il commit riesce, il job esiste. Senza verifica viene pubblicato subito.
+    """
     initial_state = "inviata" if data["tipo"] == "segnalazione" else "in_valutazione"
-    ai = data.get("ia") or {}
-    in_review = ai.get("esito") == "bozza"
-    note = "In revisione dal comitato (analisi IA)" if in_review else "Pubblicazione del contenuto"
+    queued = bool(data.get("verifica"))
+    verification_state = "in_valutazione" if queued else "pubblicata"
 
     with database_cursor(write=True) as cursor:
         cursor.execute("""INSERT INTO SEGNALAZIONE
             (IdAutore, IdQuartiere, Tipo, Titolo, Descrizione, Stato, Visibilita,
-             Latitudine, Longitudine, Indirizzo)
-            VALUES (%s, %s, %s, %s, %s, %s, 'bozza', %s, %s, %s)""",
+             Latitudine, Longitudine, Indirizzo, StatoVerifica)
+            VALUES (%s, %s, %s, %s, %s, %s, 'bozza', %s, %s, %s, %s)""",
             (author["id"], data["quartiere_id"], data["tipo"], data["titolo"],
-             data["descrizione"], initial_state, data.get("latitude"), data.get("longitude"), data.get("indirizzo") or None))
+             data["descrizione"], initial_state, data.get("latitude"), data.get("longitude"), data.get("indirizzo") or None,
+             verification_state))
         report_id = cursor.lastrowid
         if data["tipo"] == "proposta":
             cursor.execute("INSERT INTO PROPOSTA (IdSegnalazione, SogliaSostegni) VALUES (%s,%s)", (report_id, data.get("soglia_sostegni", 100)))
@@ -43,32 +51,30 @@ def create_report_record(data, author, upload):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (report_id, author["id"], upload["mime"], upload["reference"],
              upload["original_name"], upload["size"], upload["sha256"], upload["accessible_description"]))
-        attachment_id = cursor.lastrowid
-        write_attachment_content(cursor, attachment_id, upload["content"])
+        write_attachment_content(cursor, cursor.lastrowid, upload["content"])
         for category_id in data["categorie"]:
             cursor.execute("""INSERT INTO SEGNALAZIONE_CATEGORIA
                 (IdSegnalazione, IdCategoria, Origine) VALUES (%s, %s, 'utente')""",
                 (report_id, category_id))
-        for item in ai.get("categorie_ia", []):
-            cursor.execute("""INSERT INTO SEGNALAZIONE_CATEGORIA
-                (IdSegnalazione, IdCategoria, Origine, Confidenza) VALUES (%s, %s, 'ia', %s)""",
-                (report_id, item["id"], item["confidenza"]))
-        save_analyses(cursor, report_id, attachment_id, ai.get("analisi", []))
-        if not in_review:
+        if queued:
+            enqueue_verification(cursor, report_id, 1)
+            record_verification_decision(cursor, report_id, 1, "sistema", "invio", None, "in_valutazione",
+                                         user_id=author["id"], reason="Inviato alla verifica automatica")
+        else:
             # Il trigger di pubblicazione richiede che l'allegato sia già presente.
             cursor.execute("UPDATE SEGNALAZIONE SET Visibilita='pubblica' WHERE IdSegnalazione=%s", (report_id,))
         cursor.execute("""INSERT INTO STORICO_STATO
             (IdSegnalazione, StatoPrecedente, StatoSuccessivo, IdAutoreModifica, Motivazione)
             VALUES (%s, NULL, %s, %s, %s)""",
-            (report_id, initial_state, author["id"], note))
+            (report_id, initial_state, author["id"],
+             "Inviato alla verifica automatica" if queued else "Pubblicazione del contenuto"))
         cursor.execute("""INSERT INTO EVENTO_LOG
             (IdEsecutore, TipoAzione, Esito, Dettagli, IdSegnalazione)
             VALUES (%s, 'creazione_segnalazione', 'successo', %s, %s)""",
-            (author["id"], "Contenuto in revisione, allegato presente" if in_review
+            (author["id"], "Contenuto in verifica, allegato presente" if queued
              else "Contenuto pubblicato con allegato", report_id))
     return {"id": report_id, "titolo": data["titolo"], "stato": initial_state,
-            "visibilita": "bozza" if in_review else "pubblica",
-            "ia": {"esito": ai.get("esito", "pubblica"), "messaggi": ai.get("messaggi", [])}}
+            "visibilita": "bozza" if queued else "pubblica", "stato_verifica": verification_state}
 
 
 def list_report_records(search="", neighborhood_id=None, category_ids=None, state=None,
@@ -124,7 +130,10 @@ def list_report_records(search="", neighborhood_id=None, category_ids=None, stat
            AND c.Visibilita='pubblica') AS commenti_count,
         (SELECT a.IdAllegato FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione ORDER BY a.IdAllegato LIMIT 1) AS allegato_id,
         (SELECT a.TipoMedia FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione ORDER BY a.IdAllegato LIMIT 1) AS allegato_tipo,
-        (SELECT a.DescrizioneAccessibile FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione ORDER BY a.IdAllegato LIMIT 1) AS allegato_descrizione
+        (SELECT a.DescrizioneAccessibile FROM ALLEGATO a WHERE a.IdSegnalazione=s.IdSegnalazione ORDER BY a.IdAllegato LIMIT 1) AS allegato_descrizione,
+        s.StatoVerifica AS stato_verifica, s.Reinvii AS reinvii, s.Ricorsi AS ricorsi""" + (
+        # La motivazione della verifica è visibile solo all'autore, nella propria area.
+        ", s.MotivazioneVerifica AS motivazione_verifica" if author_id else "") + """
         FROM SEGNALAZIONE s JOIN UTENTE u ON u.IdUtente=s.IdAutore
         LEFT JOIN QUARTIERE q ON q.IdQuartiere=s.IdQuartiere
         WHERE """ + " AND ".join(filters) + (
@@ -153,6 +162,7 @@ def get_report_record(report_id):
             s.Latitudine AS latitude, s.Longitudine AS longitude,
             s.IdAutore AS autore_id, q.Nome AS quartiere,
             CONCAT(u.Nome, ' ', u.Cognome) AS autore,
+            s.StatoVerifica AS stato_verifica, s.MotivazioneVerifica AS motivazione_verifica,
             (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', c.IdCategoria, 'nome', c.Nome, 'origine', sc.Origine))
              FROM SEGNALAZIONE_CATEGORIA sc JOIN CATEGORIA c ON c.IdCategoria=sc.IdCategoria
              WHERE sc.IdSegnalazione=s.IdSegnalazione) AS categorie_json,
@@ -279,10 +289,12 @@ def moderate_reports(ids, moderator_id, visibility):
     changed, missing, unchanged = 0, [], 0
     with database_cursor(write=True) as cursor:
         for report_id in sorted(set(ids)):
-            cursor.execute("SELECT Visibilita, duplicate_of_id, IdAutore FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
+            cursor.execute("SELECT Visibilita, duplicate_of_id, IdAutore, StatoVerifica FROM SEGNALAZIONE WHERE IdSegnalazione=%s FOR UPDATE", (report_id,))
             row = cursor.fetchone()
             if not row:
                 missing.append(report_id)
+            elif visibility == "pubblica" and row.get("StatoVerifica", "pubblicata") != "pubblicata":
+                unchanged += 1  # va deciso dalla pagina «Verifica AI», che registra motivo e storico
             elif row["Visibilita"] == visibility:
                 unchanged += 1
             elif row["Visibilita"] == "rimossa" and visibility != "pubblica":
