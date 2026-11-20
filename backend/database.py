@@ -3,11 +3,13 @@
 import os
 import hashlib
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
 
 import mysql.connector
+from mysql.connector.errors import PoolError
 from mysql.connector.pooling import MySQLConnectionPool
 from flask import current_app
 
@@ -44,6 +46,10 @@ def get_connection():
         raise mysql.connector.InterfaceError("Porta o dimensione pool MySQL non valida.") from error
     if not 1 <= pool_size <= 32:
         raise mysql.connector.InterfaceError("Dimensione pool MySQL fuori limite.")
+    try:
+        pool_wait = min(30.0, max(0.0, float(os.getenv("DB_POOL_WAIT", "5"))))
+    except ValueError:
+        pool_wait = 5.0
     app = current_app._get_current_object()
     pool = app.extensions.get("mysql_pool")
     if pool is None:
@@ -59,7 +65,23 @@ def get_connection():
                     ssl_ca=str(ca_path), ssl_verify_cert=True, ssl_verify_identity=True,
                 )
                 app.extensions["mysql_pool"] = pool
-    return pool.get_connection()
+    return _wait_for_connection(pool, pool_wait)
+
+
+def _wait_for_connection(pool, wait_seconds):
+    """Il pool di mysql-connector non aspetta: se tutte le connessioni sono in uso solleva subito
+    PoolError, che diventava un 503. Una pagina fa partire più chiamate API in parallelo, quindi
+    qui si attende che una connessione si liberi, per al massimo wait_seconds."""
+    deadline = time.monotonic() + wait_seconds
+    delay = 0.01
+    while True:
+        try:
+            return pool.get_connection()
+        except PoolError as error:
+            if "exhausted" not in str(error).lower() or time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.1)
 
 
 @contextmanager

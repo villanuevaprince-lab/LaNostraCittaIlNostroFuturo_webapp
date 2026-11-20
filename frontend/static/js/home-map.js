@@ -12,6 +12,15 @@ function mapPopup(item) {
   return box;
 }
 
+// Solo punti con numeri validi arrivano a MapLibre; quelli scartati si contano come «senza posizione».
+function cleanMapData(data) {
+  const raw = Array.isArray(data?.items) ? data.items : [];
+  const items = raw.filter((item) => item && Number.isInteger(item.id)
+    && isValidLatLng(item.lat, item.lng) && typeof item.titolo === "string");
+  const reported = isValidNumber(data?.senza_coordinate) ? Math.max(0, data.senza_coordinate) : 0;
+  return { items, senza_coordinate: reported + (raw.length - items.length), troncato: data?.troncato === true };
+}
+
 function updateLegend(data) {
   ["segnalazione", "proposta"].forEach((type) => {
     const total = data.items.filter((item) => item.tipo === type).length;
@@ -30,8 +39,9 @@ async function loadHomeMap() {
   let data;
   try {
     const response = await fetch("/api/map-items", { credentials: "same-origin" });
-    data = await response.json();
-    if (!response.ok) throw new Error(data.error);
+    const body = await response.json().catch(() => null);
+    if (!response.ok || body === null) throw new Error(body?.error || "Mappa non disponibile.");
+    data = cleanMapData(body);
   } catch (error) {
     status.textContent = "Non è stato possibile caricare i punti della mappa. L'elenco qui sotto resta disponibile.";
     container.hidden = true;
@@ -47,6 +57,7 @@ async function loadHomeMap() {
     container, style: "https://tiles.openfreemap.org/styles/liberty",
     center: [9.19, 45.4642], zoom: 11.3, attributionControl: true, cooperativeGestures: true,
   });
+  protectNumericStyle(map);
   map.addControl(new maplibregl.NavigationControl(), "top-left");
   map.on("load", () => {
     map.addSource("map-items", { type: "geojson", data: {

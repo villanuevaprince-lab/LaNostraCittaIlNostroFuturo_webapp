@@ -12,8 +12,16 @@ let searchTimer;
 let requestController;
 
 async function readJSON(response) {
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Richiesta non riuscita.");
+  // Un proxy o un server in avvio può rispondere con una pagina HTML: niente SyntaxError a video.
+  let data = null;
+  try { data = await response.json(); } catch (_) { data = null; }
+  if (!response.ok) {
+    const fallback = response.status === 503
+      ? "La bacheca non è disponibile in questo momento. Riprova tra qualche minuto."
+      : "Richiesta non riuscita.";
+    throw new Error((data && data.error) || fallback);
+  }
+  if (data === null) throw new Error("Risposta non valida dal server. Riprova tra poco.");
   return data;
 }
 
@@ -51,10 +59,14 @@ async function loadReports() {
     const rows = await fetch(`/api/segnalazioni?${params}`, {
       signal: requestController.signal, credentials: "same-origin",
     }).then(readJSON);
-    list.replaceChildren(...rows.map(createCard));
-    status.textContent = rows.length ? `${rows.length} contenuti trovati` : "Nessun contenuto trovato.";
+    const items = Array.isArray(rows) ? rows : [];
+    list.replaceChildren(...items.map(createCard));
+    status.textContent = items.length ? `${items.length} contenuti trovati` : "Nessun contenuto trovato.";
   } catch (error) {
-    if (error.name !== "AbortError") status.textContent = error.message;
+    if (error.name === "AbortError") return;
+    // Stato vuoto e messaggio leggibile: niente schede di una ricerca precedente.
+    list.replaceChildren();
+    status.textContent = error.message;
   }
 }
 

@@ -67,6 +67,7 @@ MAP_CONTACT_EMAIL=tuo-email@example.com
 DB_HOST=il-tuo-host.aivencloud.com
 DB_PORT=12345
 DB_POOL_SIZE=5
+DB_POOL_WAIT=5
 DB_USER=avnadmin
 DB_PASSWORD=la-password-di-aiven
 DB_NAME=nostra_citta
@@ -310,6 +311,30 @@ rete Aiven.
 8. Dalla dashboard dell'autore prova il ritiro logico della segnalazione.
 
 ## 8. Errori frequenti
+
+### `503` su `/api/segnalazioni` (la mappa invece funziona)
+
+Guarda il log del server, che indica la causa:
+
+- `Schema del database non aggiornato (codice MySQL 1054)` o `1146`: il codice è più nuovo
+  del database. Applica le migrazioni mancanti (sezione 4), in particolare la 010 con
+  `python -m backend.apply_verification_migration`. La bacheca legge colonne aggiunte dalla 010,
+  la mappa no: per questo si rompe solo la bacheca.
+- `Connessioni MySQL esaurite anche dopo l'attesa`: troppe richieste insieme per il pool.
+  Ogni pagina fa più chiamate in parallelo; l'app aspetta fino a `DB_POOL_WAIT` secondi una
+  connessione libera. Se succede ancora, aumenta `DB_POOL_SIZE` entro il limite di connessioni
+  del piano Aiven (ogni processo o istanza ha il proprio pool).
+- `Errore MySQL (codice 2003/2013/…)`: database irraggiungibile o connessione caduta.
+
+### Avvisi della console del browser sulla mappa
+
+- `Expected value to be of type number, but found null instead`: arriva dallo stile Liberty di
+  OpenFreeMap (altezza degli edifici 3D senza valore). `location.js` aggiunge un valore di
+  ripiego appena lo stile è caricato; se ricompare con un nuovo stile, cerca altre proprietà
+  numeriche lette con `["get", …]`.
+- Una violazione CSP sulla source map di `maplibre-gl.js.map` compare solo con gli strumenti
+  di sviluppo aperti; `connect-src` ora consente `https://unpkg.com`.
+
 
 ### `ModuleNotFoundError: No module named 'mysql'`
 

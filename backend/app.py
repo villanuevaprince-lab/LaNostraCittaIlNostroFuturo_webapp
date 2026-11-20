@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 import mysql.connector
+from mysql.connector.errors import PoolError
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 from flask_wtf.csrf import CSRFError
@@ -15,6 +16,10 @@ from werkzeug.security import generate_password_hash
 
 from backend.database import ROOT_DIR
 from backend.security import csrf, enforce_ban, limiter, load_current_user
+
+
+# 1054 colonna inesistente, 1146 tabella inesistente: il codice è più nuovo dello schema.
+SCHEMA_ERRORS = {1054, 1146}
 
 
 def _env_float(name, default):
@@ -147,6 +152,17 @@ def create_app(test_config=None):
     @app.errorhandler(mysql.connector.Error)
     def database_error(error):
         # Niente password, query o dati dell'utente nei messaggi di errore.
+        if error.errno in SCHEMA_ERRORS:
+            # Codice nuovo su un database senza le migrazioni: va detto chiaramente a chi gestisce il server.
+            app.logger.error("Schema del database non aggiornato (codice MySQL %s): applica le migrazioni "
+                             "mancanti, ad esempio python -m backend.apply_verification_migration "
+                             "(vedi docs/configurazione.md)", error.errno)
+            return error_response("Il servizio è in aggiornamento e non è disponibile in questo momento. "
+                                  "Riprova più tardi.", 503)
+        if isinstance(error, PoolError):
+            app.logger.error("Connessioni MySQL esaurite anche dopo l'attesa: aumenta DB_POOL_SIZE "
+                             "(e i limiti del piano Aiven) oppure DB_POOL_WAIT")
+            return error_response("Il servizio è molto occupato in questo momento. Riprova tra qualche secondo.", 503)
         app.logger.error("Errore MySQL (codice %s)", error.errno)
         return error_response("Database non disponibile. Riprova più tardi.", 503)
 
@@ -187,7 +203,8 @@ def create_app(test_config=None):
             "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
             "script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
-            "worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org; "
+            # unpkg.com in connect-src: gli strumenti di sviluppo scaricano da lì la source map di MapLibre.
+            "worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org https://unpkg.com; "
             "img-src 'self' data: https://tiles.openfreemap.org"
         )
         if request.endpoint != "static":
