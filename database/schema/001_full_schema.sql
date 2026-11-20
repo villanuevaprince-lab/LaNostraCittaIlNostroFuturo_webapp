@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS UTENTE (
   IdQuartiere INT UNSIGNED NULL,
   Nome VARCHAR(100) NOT NULL,
   Cognome VARCHAR(100) NOT NULL,
-  Email VARCHAR(254) NOT NULL,
+  Email VARCHAR(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
   HashPassword VARCHAR(255) NOT NULL,
   Bio VARCHAR(500) NOT NULL DEFAULT '',
   NotificheEmail BOOLEAN NOT NULL DEFAULT FALSE,
@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS UTENTE (
   StatoAccount VARCHAR(30) NOT NULL DEFAULT 'attivo',
   DataCancellazione DATETIME NULL,
   CONSTRAINT uq_utente_email UNIQUE (Email),
+  CONSTRAINT chk_utente_email_normalizzata CHECK (CAST(Email AS BINARY) = CAST(LOWER(TRIM(Email)) AS BINARY) AND Email LIKE '%_@_%'),
   CONSTRAINT fk_utente_quartiere FOREIGN KEY (IdQuartiere) REFERENCES QUARTIERE (IdQuartiere),
   CONSTRAINT chk_utente_stato CHECK (StatoAccount IN ('attivo', 'bloccato', 'cancellato'))
 ) ENGINE=InnoDB;

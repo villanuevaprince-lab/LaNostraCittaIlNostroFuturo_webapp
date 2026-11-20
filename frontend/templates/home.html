@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block scripts %}
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js" defer></script>
   <script src="{{ url_for('static', filename='js/home.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/home-map.js') }}" defer></script>
 {% endblock %}
 {% block content %}
   <section class="hero">
@@ -10,6 +13,21 @@
       <p>Scopri cosa succede nei quartieri di Milano, partecipa alla discussione e sostieni le idee che contano per te.</p>
     </div>
     <a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
+  </section>
+  <section class="panel map-panel" aria-labelledby="map-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Mappa della città</p>
+        <h2 id="map-title">Dove sono segnalazioni e proposte</h2>
+      </div>
+      <ul class="map-legend" aria-label="Legenda della mappa">
+        <li><span class="legend-marker legend-segnalazione" aria-hidden="true"></span>Segnalazioni <span class="legend-count" data-map-count="segnalazione"></span></li>
+        <li><span class="legend-marker legend-proposta" aria-hidden="true"></span>Proposte <span class="legend-count" data-map-count="proposta"></span></li>
+        <li id="map-missing" class="legend-missing" hidden></li>
+      </ul>
+    </div>
+    <p id="map-status" class="status" role="status" aria-live="polite">Caricamento della mappa…</p>
+    <div id="home-map" class="map home-map" role="region" aria-label="Mappa interattiva di segnalazioni e proposte. L'elenco completo è nella bacheca qui sotto."></div>
   </section>
   <section class="panel" aria-labelledby="segnalazioni-title" data-authenticated="{{ 'true' if g.user else 'false' }}">
     <div class="section-heading">

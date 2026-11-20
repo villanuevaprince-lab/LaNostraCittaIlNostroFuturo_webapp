@@ -65,6 +65,29 @@ document.querySelector("#password-form").addEventListener("submit", async (event
   } catch (error) { output.textContent = error.message; button.disabled = false; }
 });
 
+document.querySelector("#email-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const emailForm = event.currentTarget;
+  const output = document.querySelector("#email-status");
+  const button = emailForm.querySelector("button"); button.disabled = true;
+  output.textContent = "Invio del link…";
+  try {
+    const response = await fetch("/api/auth/me/email", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+      body: JSON.stringify(Object.fromEntries(new FormData(emailForm))),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const details = data.fields ? Object.values(data.fields).flat().join(" ") : "";
+      throw new Error([data.error, details].filter(Boolean).join(" ") || "Operazione non riuscita.");
+    }
+    emailForm.reset();
+    output.textContent = data.message;
+  } catch (error) { output.textContent = error.message; }
+  finally { button.disabled = false; }
+});
+
 document.querySelector("#avatar-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const avatarForm = event.currentTarget;

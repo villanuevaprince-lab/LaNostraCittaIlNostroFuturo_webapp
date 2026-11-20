@@ -12,6 +12,7 @@
       <input type="hidden" name="next" value="{{ next_url }}">
       {{ field(form.email, type='email', autocomplete='email', maxlength=254, required=true) }}
       {{ field(form.password, autocomplete='current-password', maxlength=128, required=true) }}
+      <p class="auth-note"><a href="{{ url_for('account.forgot_password') }}">Hai dimenticato la password?</a></p>
       <button class="button" type="submit" data-busy-label="Accesso in corso…">Accedi</button>
       <p data-form-status class="status" role="status" aria-live="polite"></p>
     </form>

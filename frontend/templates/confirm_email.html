@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Conferma email — La Nostra Città{% endblock %}
+{% block content %}
+  <section class="panel auth-panel" aria-labelledby="confirm-title">
+    <p class="eyebrow">Il tuo account</p>
+    <h1 id="confirm-title" class="page-title">Conferma il nuovo indirizzo</h1>
+    {% if invalid %}
+      <div class="notice notice-error" role="alert">{{ message or "Il link non è valido, è scaduto oppure è già stato usato." }}</div>
+      <p>Puoi richiedere un nuovo link dalla pagina del profilo.</p>
+    {% else %}
+      <p>Il tuo account userà <strong>{{ new_email }}</strong> per l'accesso e le comunicazioni.</p>
+      <form method="post">
+        {{ form.hidden_tag() }}
+        <button class="button" type="submit">Conferma il nuovo indirizzo</button>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

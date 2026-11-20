@@ -3,7 +3,7 @@
 {% block scripts %}<script src="{{ url_for('static', filename='js/profile.js') }}" defer></script>{% endblock %}
 {% block content %}
   <section class="panel profile-panel"><p class="eyebrow">Il tuo account</p><h1 class="page-title">Profilo e sicurezza</h1>
-    <div class="profile-layout"><div>
+    <fieldset class="profile-fieldset" {% if g.user.ban %}disabled{% endif %}><div class="profile-layout"><div>
     <h2>Informazioni personali</h2>
     <form id="profile-form" data-profile-form>
       <label class="field">Nome<input name="nome" maxlength="100" required></label>
@@ -32,8 +32,16 @@
       <button class="button" type="submit">Cambia password</button>
     </form>
     <p id="password-status" class="status" role="status"></p>
+    <h2>Cambia email</h2>
+    <p class="hint">Ti invieremo un link di conferma al nuovo indirizzo: l'email cambia solo dopo la conferma.</p>
+    <form id="email-form">
+      <label class="field">Nuova email<input name="nuova_email" type="email" maxlength="254" autocomplete="email" required></label>
+      <label class="field">Password attuale<input name="password" type="password" maxlength="128" autocomplete="current-password" required></label>
+      <button class="button button-secondary" type="submit">Invia link di conferma</button>
+    </form>
+    <p id="email-status" class="status" role="status" aria-live="polite"></p>
     <hr><h2>Elimina account</h2><p>L'account sarà disattivato con cancellazione logica.</p>
     <button class="button button-danger" id="delete-account" type="button">Elimina il mio account</button>
-    </div></div>
+    </div></div></fieldset>
   </section>
 {% endblock %}

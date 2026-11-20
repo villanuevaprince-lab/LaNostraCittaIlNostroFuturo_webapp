@@ -13,7 +13,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash
 
 from backend.database import ROOT_DIR
-from backend.security import csrf, limiter, load_current_user
+from backend.security import csrf, enforce_ban, limiter, load_current_user
 
 
 def _env_float(name, default):
@@ -23,11 +23,25 @@ def _env_float(name, default):
         return float(default)
 
 
+def _env_int(name, default):
+    try:
+        return int(os.getenv(name, default))
+    except ValueError:
+        return int(default)
+
+
+def _env_bool(name, default):
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _project_path(value):
+    path = Path(value)
+    return path if path.is_absolute() else ROOT_DIR / path
+
+
 def create_app(test_config=None):
     load_dotenv(ROOT_DIR / ".env")
-    upload_folder = Path(os.getenv("UPLOAD_FOLDER", "storage/uploads"))
-    if not upload_folder.is_absolute():
-        upload_folder = ROOT_DIR / upload_folder
+    upload_folder = _project_path(os.getenv("UPLOAD_FOLDER", "storage/uploads"))
     app = Flask(
         __name__,
         template_folder=str(ROOT_DIR / "frontend" / "templates"),
@@ -57,6 +71,20 @@ def create_app(test_config=None):
         AI_BLOCK_THRESHOLD=_env_float("AI_BLOCK_THRESHOLD", 0.80),
         AI_REVIEW_THRESHOLD=_env_float("AI_REVIEW_THRESHOLD", 0.50),
         AI_CATEGORY_THRESHOLD=_env_float("AI_CATEGORY_THRESHOLD", 0.60),
+        # Email: SMTP se MAIL_SERVER è impostato, altrimenti file .eml locali (sviluppo).
+        MAIL_BACKEND=os.getenv("MAIL_BACKEND") or ("smtp" if os.getenv("MAIL_SERVER") else "file"),
+        MAIL_SERVER=os.getenv("MAIL_SERVER", ""),
+        MAIL_PORT=_env_int("MAIL_PORT", 587),
+        MAIL_USERNAME=os.getenv("MAIL_USERNAME", ""),
+        MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", ""),
+        MAIL_USE_TLS=_env_bool("MAIL_USE_TLS", "true"),
+        MAIL_USE_SSL=_env_bool("MAIL_USE_SSL", "false"),
+        MAIL_FROM=os.getenv("MAIL_FROM", "La Nostra Città <noreply@localhost>"),
+        MAIL_OUTBOX_DIR=str(_project_path(os.getenv("MAIL_OUTBOX_DIR", "storage/mail_outbox"))),
+        # Base dei link nelle email: mai dedotta dall'header Host (evita link avvelenati).
+        APP_BASE_URL=os.getenv("APP_BASE_URL", "http://localhost:3000"),
+        PASSWORD_RESET_MAX_AGE=_env_int("PASSWORD_RESET_MAX_AGE", 1800),
+        EMAIL_CHANGE_MAX_AGE=_env_int("EMAIL_CHANGE_MAX_AGE", 3600),
     )
     if test_config:
         app.config.update(test_config)
@@ -72,10 +100,12 @@ def create_app(test_config=None):
     # Un hash fittizio rende simile il costo del login anche per email inesistenti.
     app.extensions["dummy_password_hash"] = generate_password_hash(secrets.token_urlsafe(32))
     app.before_request(load_current_user)
+    app.before_request(enforce_ban)
     csrf.init_app(app)
     limiter.init_app(app)
 
     from backend.auth import auth
+    from backend.account import account
     from backend.api.ai import ai_api
     from backend.api.auth import auth_api
     from backend.api.catalog import catalog_api
@@ -85,6 +115,7 @@ def create_app(test_config=None):
 
     app.register_blueprint(auth)
     app.register_blueprint(auth_api)
+    app.register_blueprint(account)
     app.register_blueprint(ai_api)
     app.register_blueprint(catalog_api)
     app.register_blueprint(geo_api)
@@ -123,7 +154,8 @@ def create_app(test_config=None):
     def security_headers(response):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # Le pagine con token nell'URL impostano già "no-referrer": non va sovrascritto.
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
             "script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com; "

@@ -14,7 +14,7 @@ from backend.repositories.reports import create_report_record, list_moderation_r
 from backend.services import ai
 from backend.services.uploads import extract_gps
 from test_app import make_image
-from test_database import fake_mysql, report_payload, upload_payload  # noqa: F401  (fixture)
+from test_database import report_payload, upload_payload
 
 
 CATEGORIES = [

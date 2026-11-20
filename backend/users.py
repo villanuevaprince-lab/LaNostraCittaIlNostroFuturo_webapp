@@ -59,6 +59,34 @@ def create_user(nome, cognome, email, password_hash):
     return user
 
 
+def find_active_ban(user_id):
+    """Ultimo blocco non revocato: motivo, inizio e fine prevista (None = permanente)."""
+    with database_cursor() as cursor:
+        cursor.execute("""SELECT IdBlocco AS id, Motivazione AS motivo, DataInizio AS data_inizio,
+                                 DataFinePrevista AS data_fine
+                          FROM BLOCCO WHERE IdUtenteBloccato = %s AND DataRevoca IS NULL
+                          ORDER BY IdBlocco DESC LIMIT 1""", (user_id,))
+        return cursor.fetchone()
+
+
+def expire_ban(user_id, block_id):
+    """Chiude un blocco temporaneo scaduto e riattiva l'account; idempotente."""
+    with database_cursor(write=True) as cursor:
+        cursor.execute("""UPDATE BLOCCO SET DataRevoca = CURRENT_TIMESTAMP,
+                          MotivoRevoca = 'Scadenza del blocco temporaneo'
+                          WHERE IdBlocco = %s AND IdUtenteBloccato = %s AND DataRevoca IS NULL""",
+                       (block_id, user_id))
+        if cursor.rowcount != 1:
+            return False
+        cursor.execute("UPDATE UTENTE SET StatoAccount = 'attivo' WHERE IdUtente = %s AND StatoAccount = 'bloccato'",
+                       (user_id,))
+        cursor.execute("""INSERT INTO EVENTO_LOG
+            (IdEsecutore, TipoAzione, Esito, Dettagli, IdUtenteBersaglio, IdBlocco)
+            VALUES (NULL, 'scadenza_blocco', 'successo', 'Blocco temporaneo scaduto', %s, %s)""",
+            (user_id, block_id))
+    return True
+
+
 def has_role(user_id, role="moderatore"):
     if role not in {"moderatore", "amministratore"}:
         return False
@@ -130,4 +158,41 @@ def set_avatar_reference(user_id, reference):
         cursor.execute("""INSERT INTO EVENTO_LOG
             (IdEsecutore, TipoAzione, Esito, Dettagli, IdUtenteBersaglio)
             VALUES (%s, 'modifica_avatar', 'successo', 'Avatar aggiornato', %s)""", (user_id, user_id))
+    return True
+
+
+def reset_password_hash(user_id, previous_hash, new_hash):
+    """Reset da link email. La condizione sull'hash precedente rende il token monouso
+    anche con richieste concorrenti; SessionVersion+1 chiude tutte le sessioni aperte."""
+    with database_cursor(write=True) as cursor:
+        cursor.execute("""UPDATE UTENTE SET HashPassword=%s, SessionVersion=SessionVersion+1
+            WHERE IdUtente=%s AND HashPassword=%s AND StatoAccount IN ('attivo', 'bloccato')
+            AND DataCancellazione IS NULL""", (new_hash, user_id, previous_hash))
+        if cursor.rowcount != 1:
+            return False
+        cursor.execute("""INSERT INTO EVENTO_LOG
+            (IdEsecutore, TipoAzione, Esito, Dettagli, IdUtenteBersaglio)
+            VALUES (%s, 'reset_password', 'successo', 'Password reimpostata tramite link email', %s)""",
+            (user_id, user_id))
+    return True
+
+
+def change_email(user_id, previous_email, new_email):
+    """Conferma del cambio email: vale solo se l'indirizzo attuale è ancora quello del token."""
+    try:
+        with database_cursor(write=True) as cursor:
+            cursor.execute("""UPDATE UTENTE SET Email=%s WHERE IdUtente=%s AND Email=%s
+                AND StatoAccount='attivo'""", (new_email.lower(), user_id, previous_email.lower()))
+            if cursor.rowcount != 1:
+                return False
+            cursor.execute("""INSERT INTO EVENTO_LOG
+                (IdEsecutore, TipoAzione, Esito, Dettagli, IdUtenteBersaglio)
+                VALUES (%s, 'modifica_email', 'successo', 'Email confermata tramite link', %s)""",
+                (user_id, user_id))
+            cursor.execute("""INSERT INTO VARIAZIONE_LOG (IdEvento, NomeCampo, ValorePrecedente, ValoreSuccessivo)
+                VALUES (%s, 'UTENTE.Email', %s, %s)""", (cursor.lastrowid, previous_email.lower(), new_email.lower()))
+    except IntegrityError as error:
+        if error.errno == 1062:
+            raise DuplicateEmail() from error
+        raise
     return True

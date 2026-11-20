@@ -2,7 +2,8 @@ from flask import Blueprint, current_app, g, jsonify, request, send_file, sessio
 
 from backend.forms import LoginForm, RegisterForm
 from backend.repositories.catalog import valid_neighborhood
-from backend.security import hash_password, limiter, password_hasher, safe_next, start_session, verify_password
+from backend.security import (after_login_destination, can_login, hash_password, limiter, password_hasher,
+                              safe_next, start_session, verify_password)
 from backend.services.avatars import avatar_path, save_avatar
 from backend.users import (DuplicateEmail, create_user, delete_account, find_user_by_email,
                            find_user_by_id, update_password_hash, update_profile,
@@ -18,9 +19,16 @@ def json_form(form_class, payload):
 
 
 def clean_user(user):
-    return {key: user.get(key) for key in
+    data = {key: user.get(key) for key in
             ("id", "nome", "cognome", "email", "quartiere_id", "stato_account",
              "bio", "notifiche_email", "avatar_riferimento")}
+    ban = user.get("ban")
+    data["ban"] = None if not ban else {
+        "motivo": ban.get("motivo"),
+        "data_inizio": ban["data_inizio"].isoformat(timespec="minutes") if ban.get("data_inizio") else None,
+        "data_fine": ban["data_fine"].isoformat(timespec="minutes") if ban.get("data_fine") else None,
+    }
+    return data
 
 
 @auth_api.post("/register")
@@ -57,12 +65,13 @@ def login_api():
     user = find_user_by_email(form.email.data)
     stored_hash = user["hash_password"] if user else current_app.extensions["dummy_password_hash"]
     valid = verify_password(stored_hash, form.password.data)
-    if not (valid and user and user["stato_account"] == "attivo" and not user["data_cancellazione"]):
+    if not (valid and can_login(user)):
         return jsonify(error="Email o password non valide, oppure account non disponibile."), 401
     if not stored_hash.startswith("$argon2id$") or password_hasher.check_needs_rehash(stored_hash):
         update_password_hash(user["id"], hash_password(form.password.data))
     start_session(user)
-    return jsonify(user=clean_user(user), redirect=safe_next(payload.get("next")))
+    return jsonify(user=clean_user(user),
+                   redirect=after_login_destination(user, safe_next(payload.get("next"))))
 
 
 @auth_api.post("/logout")

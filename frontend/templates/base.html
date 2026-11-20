@@ -10,7 +10,7 @@
   <script src="{{ url_for('static', filename='js/forms.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/lifecycle.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/discussion.js') }}" defer></script>
-  {% if g.user %}<script src="{{ url_for('static', filename='js/notifications.js') }}" defer></script>{% endif %}
+  {% if g.user and not g.user.ban %}<script src="{{ url_for('static', filename='js/notifications.js') }}" defer></script>{% endif %}
   {% block scripts %}{% endblock %}
 </head>
 <body data-user-id="{{ g.user.id if g.user else '' }}" data-moderator="{{ 'true' if g.user and g.user.is_moderator else 'false' }}">
@@ -21,11 +21,13 @@
       <span class="tagline">Il Nostro Futuro</span>
     </div>
     <nav aria-label="Navigazione principale">
+      {% if not (g.user and g.user.ban) %}
       <a class="nav-link" href="/">Home</a>
       <a class="nav-link" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>
+      {% endif %}
       {% if g.user %}
         <span class="nav-user">Ciao, {{ g.user.nome }}</span>
-        <a class="nav-link" href="/notifiche">Notifiche <span id="notification-count" aria-label="Notifiche non lette"></span></a>
+        {% if not g.user.ban %}<a class="nav-link" href="/notifiche">Notifiche <span id="notification-count" aria-label="Notifiche non lette"></span></a>{% endif %}
         <a class="nav-link" href="{{ url_for('pages.profile') }}">Profilo</a>
         <a class="nav-link" href="{{ url_for('pages.dashboard') }}">Dashboard</a>
         {% if g.user.is_moderator %}<a class="nav-link" href="{{ url_for('pages.moderation') }}">Moderazione</a>{% endif %}
@@ -40,6 +42,14 @@
     </nav>
   </header>
   <main id="main">
+    {% if g.user and g.user.ban %}{% set ban = g.user.ban %}
+      <div class="notice notice-error ban-banner" role="alert">
+        <p><strong>Il tuo profilo è stato bannato dai moderatori.</strong>
+          {% if ban.data_inizio %}Ban attivo dal {{ ban.data_inizio.strftime('%d/%m/%Y alle %H:%M') }}{% else %}Ban attivo{% endif %}{% if ban.data_fine %} fino al {{ ban.data_fine.strftime('%d/%m/%Y alle %H:%M') }}{% else %}, senza scadenza{% endif %}.</p>
+        {% if ban.motivo %}<p>Motivo indicato: {{ ban.motivo }}</p>{% endif %}
+        <p>Finché il ban è attivo puoi consultare solo il tuo profilo e i tuoi contenuti: non puoi pubblicare, commentare, sostenere proposte né modificare il profilo.</p>
+      </div>
+    {% endif %}
     {% for category, message in get_flashed_messages(with_categories=true) %}
       <div class="notice notice-{{ category }}" role="status">{{ message }}</div>
     {% endfor %}

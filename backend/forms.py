@@ -39,6 +39,33 @@ class RegisterForm(LoginForm):
     ])
 
 
+class ForgotPasswordForm(FlaskForm):
+    email = StringField("Email", filters=[normalize_email], validators=[
+        DataRequired("Inserisci l'email."), Email("Inserisci un'email valida."), Length(max=254)
+    ])
+
+
+class ResetPasswordForm(FlaskForm):
+    # Stessa regola della registrazione (12–128): più severa del minimo di 8 caratteri.
+    password = PasswordField("Nuova password", validators=[
+        DataRequired("Inserisci la nuova password."),
+        Length(min=12, max=128, message="Usa una password da 12 a 128 caratteri.")
+    ])
+    password_confirm = PasswordField("Conferma nuova password", validators=[
+        DataRequired("Ripeti la password."),
+        EqualTo("password", message="Le password non coincidono.")
+    ])
+
+
+class EmailChangeForm(FlaskForm):
+    nuova_email = StringField("Nuova email", filters=[normalize_email], validators=[
+        DataRequired("Inserisci la nuova email."), Email("Inserisci un'email valida."), Length(max=254)
+    ])
+    password = PasswordField("Password attuale", validators=[
+        DataRequired("Inserisci la password attuale."), Length(max=128)
+    ])
+
+
 class ReportForm(FlaskForm):
     tipo = SelectField("Tipo", choices=[
         ("segnalazione", "Segnalazione"), ("proposta", "Proposta")
