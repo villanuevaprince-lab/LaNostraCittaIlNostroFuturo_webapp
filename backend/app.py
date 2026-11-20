@@ -185,7 +185,8 @@ def create_app(test_config=None):
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
-            "script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com; "
+            "script-src 'self' https://unpkg.com; style-src 'self' https://unpkg.com https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
             "worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org; "
             "img-src 'self' data: https://tiles.openfreemap.org"
         )
