@@ -248,7 +248,8 @@ nav a { text-decoration: none; font-weight: 550; }
 
 .inline-form { display: inline-flex; }
 .button-link { border: 0; background: none; font: inherit; font-weight: 600; cursor: pointer; }
-.nav-cta { min-height: 40px; padding-inline: 18px; margin-left: 4px; }
+/* nav .button.nav-cta: più specifico di .button, che altrimenti imporrebbe raggio e altezza dei pulsanti. */
+nav .button.nav-cta { min-height: 40px; padding: 8px 18px; margin-left: 4px; border-radius: var(--r-pill); font-size: .94rem; }
 
 /* ---------- Pulsanti ---------- */
 
@@ -613,7 +614,9 @@ form { display: grid; gap: 18px; }
   object-fit: cover;
   background: #e2e8f0;
 }
-.report-card > img.report-image { transition: transform .5s var(--ease); }
+/* color: transparent nasconde alla vista il testo alternativo di un'immagine non caricata,
+   che resta disponibile ai lettori di schermo; si vede solo il fondo grigio della copertina. */
+.report-card > img.report-image { color: transparent; transition: transform .5s var(--ease); }
 .report-card:hover > img.report-image { transform: scale(1.03); }
 
 .report-card h3 { margin-bottom: 6px; font-size: 1.125rem; line-height: 1.35; }
@@ -764,7 +767,8 @@ form { display: grid; gap: 18px; }
 .legend-segnalazione { background: #c2410c; }
 .legend-proposta { background: #1d4ed8; border-color: #1e293b; }
 .legend-count { color: var(--ink-3); font-weight: 500; }
-.legend-missing { color: var(--ink-3); font-weight: 500 !important; background: var(--surface-soft) !important; }
+/* Nota informativa, non un badge: testo secondario che può andare a capo senza deformarsi. */
+.map-legend li.legend-missing { flex-basis: 100%; justify-content: flex-end; padding: 0 2px; border: 0; background: none; color: var(--ink-3); font-weight: 500; font-size: .82rem; }
 .maplibregl-popup-content { border-radius: var(--r-frame) !important; padding: 14px 16px !important; box-shadow: var(--shadow-lift) !important; font-family: var(--font-text); }
 .map-popup h3 { margin: 0 0 6px; font-size: 1rem; }
 .map-popup p { margin: 0 0 8px; color: var(--ink-2); }
@@ -924,7 +928,11 @@ footer p { margin: 0; }
   .search { max-width: none; justify-self: stretch; }
   .site-header { align-items: flex-start; flex-direction: column; gap: 12px; }
   nav { width: 100%; justify-content: flex-start; }
-  .nav-link, .button-link { min-height: 44px; }
+  nav { gap: 2px; }
+  .nav-link, .button-link { min-height: 44px; padding-inline: 10px; font-size: .9rem; }
+  .nav-user { margin-inline: 2px; }
+  nav .button.nav-cta { min-height: 44px; margin-left: 2px; padding-inline: 14px; font-size: .9rem; }
+  .map-legend li.legend-missing { justify-content: flex-start; }
   .map-legend { justify-content: flex-start; }
   .home-map { min-height: 320px; }
   .filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
