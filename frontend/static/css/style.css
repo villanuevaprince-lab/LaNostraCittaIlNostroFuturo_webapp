@@ -441,3 +441,25 @@ nav a:hover, .report-card a:hover, .moderation-row a:hover { text-decoration: un
 .map-popup p { margin: 0 0 8px; }
 .map-popup .badge { margin-bottom: 8px; }
 @media (max-width: 760px) { .home-map { min-height: 320px; } }
+
+/* Verifica AI: avanzamento per l'autore e dashboard dei moderatori. */
+.verify-box { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 4px; background: #f8fafa; }
+.verify-box[data-verification^="respinta"] { border-left-color: #a51e2c; }
+.verify-box progress { width: 100%; height: 10px; accent-color: var(--primary); }
+.verify-label { margin: 0 0 6px; font-weight: 700; }
+.verify-steps { margin: 4px 0; }
+.verify-reason { margin: 6px 0; }
+.verify-resubmit { margin-top: 8px; }
+.notification-message { margin: 4px 0; color: var(--primary-dark); }
+.verification-counts { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0 0 12px; padding: 0; }
+.verification-counts .badge { margin: 0; }
+.verification-priority { outline: 2px solid #a51e2c; }
+.verification-detail { margin-top: 10px; }
+.verification-violations { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: .9rem; }
+.verification-violations th, .verification-violations td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.verification-history { font-size: .88rem; padding-left: 20px; }
+.verification-error { color: #a51e2c; }
+.verification-text { white-space: pre-wrap; }
+
+/* L'attributo hidden deve vincere sulle classi con display (es. .button «Carica altri»). */
+[hidden] { display: none !important; }

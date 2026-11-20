@@ -144,11 +144,11 @@ destinazione `/dashboard` con messaggio flash di pubblicazione.
 
 Le coordinate arrivano dal pin e sono validate sul server (entro Milano); se
 mancano e la foto contiene un GPS EXIF valido a Milano, si usa quello (l'indirizzo
-resta obbligatorio). Con `AI_ENABLED=true` le categorie sono facoltative (l'IA ne
-propone fino a 3, `Origine='ia'`); senza categorie né proposta l'API risponde `400`.
-La risposta `201` contiene `report.visibilita` (`pubblica` oppure `bozza` se il
-comitato deve verificarlo) e `report.ia = {esito, messaggi}`. Un testo offensivo o
-d'odio ad alta confidenza è rifiutato con `400` e `{error}`. La colonna `DescrizioneAccessibile` esistente viene compilata
+resta obbligatorio). Con `AI_ENABLED=true` il contenuto **non viene pubblicato**:
+resta `Visibilita='bozza'` con `StatoVerifica='in_valutazione'` e nella stessa
+transazione nasce un job in `VERIFICA_JOB`; le categorie sono facoltative (le propone
+il modello durante la verifica). La risposta `201` contiene `report.stato_verifica`.
+Con `AI_ENABLED=false` la pubblicazione è immediata come prima. La colonna `DescrizioneAccessibile` esistente viene compilata
 automaticamente con il tipo di media e il titolo (non descrive dettagli visivi
 non verificabili). Le immagini sono risalvate senza EXIF (il GPS è letto prima). I video
 sono controllati tramite firme file MP4/WebM, non solo nome/estensione.
@@ -167,6 +167,40 @@ sono controllati tramite firme file MP4/WebM, non solo nome/estensione.
 contenuti in revisione. Approvare o rimuovere un contenuto chiude le analisi
 in attesa (`respinta` se pubblicato, `confermata` altrimenti). Le categorie del
 dettaglio includono `origine` (`utente`, `ia`, `moderatore`).
+
+### Verifica AI: reinvio e ricorso (autore, sessione e CSRF)
+
+- `POST /api/segnalazioni/<id>/reinvio`: JSON `titolo` (3–200) e `descrizione`
+  (10–5000). Solo da `respinta_automatica`, al massimo `VERIFICA_MAX_REINVII` volte
+  (`429` oltre il limite, `409` da altri stati, `404` se non è tuo). Crea una nuova
+  versione e un nuovo job; lo stato torna `in_valutazione`.
+- `POST /api/segnalazioni/<id>/ricorso`: JSON `motivazione` (10–1000). Solo da
+  `respinta_automatica`; lo stato diventa `in_ricorso` e decide un moderatore.
+- `GET /api/me/segnalazioni` aggiunge a ogni elemento `stato_verifica`,
+  `motivazione_verifica`, `reinvii`, `ricorsi` e alla pagina `max_reinvii`.
+- `GET /api/notifiche` include `messaggio` (motivazione leggibile). Tipi nuovi:
+  `verifica_pubblicata`, `verifica_respinta`, `verifica_revisione`, `verifica_moderatore`.
+
+Stati di verifica: `in_valutazione`, `in_attesa_modello`, `pubblicata`,
+`respinta_automatica`, `respinta_moderatore`, `da_revisionare`, `in_ricorso`.
+Il ciclo di vita civico (`Stato`) resta separato.
+
+### Verifica AI: moderatori
+
+- Pagina `/moderazione/verifiche`.
+- `GET /api/moderazione/verifiche?vista=priorita|tutte|<stato>&cursor=&limit=`:
+  `priorita` (default) unisce `da_revisionare` e `in_ricorso`, dal più vecchio.
+  Ogni elemento include decisione e confidenza del modello, gravità massima, stato
+  del job e tentativi.
+- `GET /api/moderazione/verifiche/conteggi`: numero di contenuti per stato.
+- `GET /api/moderazione/verifiche/<id>`: testo, allegati, tutti gli esiti con
+  violazioni e note per il moderatore, storico delle decisioni, job.
+- `POST /api/moderazione/verifiche/<id>/decisione`: JSON `azione` (`approva` o
+  `respingi`) e `motivazione` obbligatoria (3–1000). Se contraddice l'ultima
+  decisione del modello è registrata come **ribaltamento**. Chiude un eventuale job
+  ancora in corso (un risultato tardivo del worker viene scartato), notifica l'autore.
+- La vecchia azione «Approva» della coda `/api/moderazione/segnalazioni/azioni` non
+  pubblica contenuti ancora in verifica (risultano «invariati»).
 
 ### `GET /api/segnalazioni/<id>`
 

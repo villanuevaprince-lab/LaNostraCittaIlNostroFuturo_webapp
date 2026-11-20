@@ -31,8 +31,8 @@ commenti e sostegni sono salvati nel database.
 - Validazione upload JPEG/PNG/WebP/MP4/WebM fino a 20 MB. Le immagini sono
   verificate con Pillow e risalvate senza metadati EXIF; prima del
   risalvataggio si legge il GPS EXIF, solo per proporre la posizione sulla mappa.
-- IA locale con Ollama (vedi «IA locale con Ollama»): moderazione del testo,
-  categorie suggerite e controllo di coerenza foto/testo, con revisione del comitato.
+- Verifica AI prima della pubblicazione (vedi «Verifica AI prima della pubblicazione»):
+  coda su MySQL, worker separato, decisione a tre livelli, ricorso e dashboard moderatori.
 - Commenti pubblici visibili anche agli ospiti; pubblicazione e sostegno
   richiedono account e CSRF. I sostegni ripetuti sono idempotenti.
 - Coda moderazione a paginazione keyset, selezione di tutte le righe caricate
@@ -85,36 +85,56 @@ connessione MySQL è effettiva. Senza credenziali o certificato CA le API che
 richiedono il database rispondono `503`; non vengono mostrati dati fittizi.
 Rimuovi `APP_MODE=demo` da eventuali vecchi `.env`: non è più supportato.
 
-## IA locale con Ollama
+## Verifica AI prima della pubblicazione (Ollama, in locale)
 
-L'app chiama Ollama dal **server** (mai dal browser) all'indirizzo `OLLAMA_URL`
-(default `http://localhost:11434`). Nessun dato lascia la macchina.
+Ogni nuova segnalazione o proposta resta **non pubblica** finché non passa una
+verifica automatica fatta da un modello multimodale locale servito da Ollama
+(`OLLAMA_URL`, default `http://localhost:11434`): nessun dato lascia la macchina.
 
 ```bash
-ollama pull qwen2.5:7b      # testo: moderazione e categorie
-ollama pull qwen2.5vl:7b    # visione: coerenza foto/testo
+ollama pull qwen2.5vl:7b    # verifica: testo + immagini, risposta JSON
+ollama pull qwen2.5:7b      # suggerimento categorie nel form (facoltativo)
+flask --app backend.app run --port 3000           # applicazione web
+flask --app backend.app verifica-worker           # worker della coda (processo separato)
 ```
 
-Variabili in `.env` (vedi `.env.example`): `AI_ENABLED`, `OLLAMA_URL`,
-`OLLAMA_TEXT_MODEL`, `OLLAMA_VISION_MODEL`, timeout e soglie `AI_*_THRESHOLD`.
+Flusso:
 
-Cosa succede a ogni invio (`POST /api/segnalazioni`):
+1. L'invio salva il contenuto con `StatoVerifica='in_valutazione'` (`Visibilita='bozza'`)
+   e crea nella **stessa transazione** un job in `VERIFICA_JOB`: se il commit riesce,
+   il job esiste. L'autore vede l'avanzamento nella dashboard e nelle notifiche.
+2. Il worker prende i job in ordine di arrivo con `SELECT … FOR UPDATE SKIP LOCKED`
+   (più istanze in parallelo non elaborano mai lo stesso job). Il modello valuta
+   coerenza, scopo civico, linguaggio (anche camuffato) e plausibilità e risponde con
+   `esito_suggerito`, `violazioni` (categoria, gravità 1–3, spiegazione), `confidenza`
+   e `note_moderatore`. Un filtro deterministico del linguaggio aggiunge una rete di
+   sicurezza (al massimo gravità 2: non respinge mai da solo).
+3. **La decisione la prende il codice** (`backend/services/verification_rules.py`):
+   - *respinta automaticamente* solo con una violazione di gravità 3, confidenza ≥
+     `VERIFICA_SOGLIA_ALTA` (0,90) e un modello che suggerisce di respingere;
+   - *pubblicata* solo senza violazioni o con sole violazioni di gravità 1, confidenza ≥
+     `VERIFICA_SOGLIA_BASSA` (0,70) e un modello che suggerisce di pubblicare;
+   - *da revisionare* in tutti gli altri casi (gravità 2, confidenza intermedia,
+     indicazioni contraddittorie, errori ripetuti del modello).
+4. L'autore riceve una notifica (ed email se ha attivato le notifiche email) con
+   l'esito e la motivazione. Un contenuto respinto automaticamente si può correggere e
+   reinviare fino a `VERIFICA_MAX_REINVII` volte (3) oppure portare in ricorso a un moderatore.
+5. I moderatori lavorano da `/moderazione/verifiche`: coda prioritaria (da revisionare e
+   ricorsi), filtri per stato, motivazione completa, violazioni, confidenza, storico, e
+   azioni approva/respingi/ribalta sempre con motivo (`DECISIONE_VERIFICA` + `EVENTO_LOG`).
 
-1. **Moderazione**: testo offensivo, d'odio o minaccioso con confidenza ≥ 0,80 →
-   invio rifiutato (400) con messaggio; casi volgari o dubbi (≥ 0,50) → il
-   contenuto resta `bozza` («In revisione») finché un moderatore lo approva.
-2. **Categorie**: l'IA propone fino a 3 categorie (salvate con `Origine='ia'` e
-   confidenza); se l'utente non ne sceglie nessuna, l'IA è obbligatoria per assegnarne almeno una.
-3. **Foto**: il modello di visione verifica la coerenza con il testo; una foto
-   non pertinente manda il contenuto in revisione. I video non sono analizzati.
-4. **Posizione**: il GPS EXIF della foto precompila mappa e indirizzo (solo entro Milano).
-5. Se Ollama è spento o va in timeout il contenuto viene pubblicato come prima e le
-   analisi risultano `non_disponibile` in `ANALISI_IA`, visibili ai moderatori.
+Modello assente o lento: con Ollama spento i job passano in `in_attesa_modello` e
+vengono ripresi da soli, nell'ordine di arrivo, appena il modello torna (l'autore riceve
+la notifica dell'elaborazione). Errori transitori: retry con backoff esponenziale; dopo
+`VERIFICA_MAX_TENTATIVI` il contenuto va ai moderatori con l'errore registrato. Un job
+rimasto «in elaborazione» per un worker morto torna disponibile dopo `VERIFICA_LEASE_SECONDI`.
+Nulla va perso al riavvio: la coda è in MySQL.
 
-I risultati sono in `ANALISI_IA` (migrazione `008_ai_analysis.sql`, applicabile con
-`python -m backend.apply_ai_migration`). Su Vercel `localhost:11434` non esiste:
-l'IA funziona solo se l'app gira sulla stessa macchina di Ollama (altrimenti vale il
-comportamento senza IA). Il primo invio dopo l'avvio può essere lento per il caricamento dei modelli.
+Su Vercel il worker non può girare né raggiungere `localhost:11434`: i contenuti restano
+in attesa finché un worker con accesso a Ollama e al database non li elabora.
+`AI_ENABLED=false` ripristina la pubblicazione immediata senza verifica.
+Il suggerimento delle categorie nel form e la lettura del GPS EXIF restano come prima;
+le analisi storiche della vecchia verifica sincrona restano in `ANALISI_IA`.
 
 ## Email (reset password e cambio indirizzo)
 
@@ -224,6 +244,8 @@ Le richieste che modificano dati richiedono il token CSRF nell'header
 | `GET/POST /password/dimenticata`, `/password/reimposta/<token>` | Pubblico | Reset della password via email |
 | `GET/POST /email/conferma/<token>` | Link email | Conferma del nuovo indirizzo |
 | `GET /api/map-items` | Pubblico | Punti della mappa: id, tipo, lat/lng, titolo, stato |
+| `POST /api/segnalazioni/<id>/reinvio`, `/ricorso` | Autore | Reinvio dopo rifiuto automatico o richiesta di revisione umana |
+| `/api/moderazione/verifiche*` | Moderatore | Coda della verifica AI, conteggi, dettaglio, decisioni |
 | `GET /api/geo/search`, `GET /api/geo/reverse` | Sessione | Geocodifica di Milano su richiesta |
 | `GET /api/quartieri`, `GET /api/categorie` | Pubblico | Cataloghi attivi |
 | `GET /api/segnalazioni` | Pubblico | Ricerca, filtri; `categoria` ripetibile; `?mie=1` richiede login |

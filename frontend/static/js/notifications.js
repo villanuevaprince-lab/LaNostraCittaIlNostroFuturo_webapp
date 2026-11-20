@@ -1,4 +1,6 @@
-const notificationLabels = { nuovo_commento: "Nuovo commento al tuo contenuto", risposta_commento: "Nuova risposta al tuo commento", nuovo_sostegno: "Il tuo contenuto ha ricevuto un sostegno", cambio_stato: "È cambiato lo stato del tuo contenuto" };
+const notificationLabels = { nuovo_commento: "Nuovo commento al tuo contenuto", risposta_commento: "Nuova risposta al tuo commento", nuovo_sostegno: "Il tuo contenuto ha ricevuto un sostegno", cambio_stato: "È cambiato lo stato del tuo contenuto",
+  verifica_pubblicata: "Il tuo contenuto è stato pubblicato", verifica_respinta: "Il tuo contenuto è stato respinto dalla verifica automatica",
+  verifica_revisione: "Il tuo contenuto è in revisione", verifica_moderatore: "Un moderatore ha esaminato il tuo contenuto" };
 (() => {
   const badge = document.querySelector("#notification-count");
   const root = document.querySelector("#notification-list");
@@ -29,7 +31,9 @@ const notificationLabels = { nuovo_commento: "Nuovo commento al tuo contenuto", 
           catch (error) { message.textContent = error.message; }
         });
         const date = document.createElement("p"); date.textContent = n.data.replace("T", " ");
-        item.append(link, date); root.append(item);
+        item.append(link);
+        if (n.messaggio) { const text = document.createElement("p"); text.className = "notification-message"; text.textContent = n.messaggio; item.append(text); }
+        item.append(date); root.append(item);
       }
       cursor = fresh.length && page.next_cursor && (cursor === null || page.next_cursor < cursor) ? page.next_cursor : null;
       next.hidden = !cursor; message.textContent = seen.size ? "" : "Non hai ancora notifiche.";
