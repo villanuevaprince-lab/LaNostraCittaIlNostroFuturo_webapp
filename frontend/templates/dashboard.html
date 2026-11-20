@@ -4,7 +4,7 @@
 {% block content %}
   <section class="hero"><div><p class="eyebrow">Area personale</p><h1>La tua dashboard</h1>
     <p>Consulta le tue segnalazioni e proposte pubblicate, rimosse o ritirate. Puoi ritirare un contenuto ancora attivo.</p></div>
-    <a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a></section>
+    {% if not g.user.ban %}<a class="button" href="{{ url_for('reports.new_report') }}">Nuova segnalazione</a>{% endif %}</section>
   <section class="panel"><div class="section-heading"><div><p class="eyebrow">Archivio personale</p>
     <h2>Le tue segnalazioni e proposte</h2></div>
     <label class="field">Vista<select id="dashboard-filter">

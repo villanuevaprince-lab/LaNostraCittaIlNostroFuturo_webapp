@@ -2,7 +2,8 @@
 
 from flask import Blueprint, current_app, flash, g, redirect, render_template, request, session
 from backend.forms import LoginForm, RegisterForm
-from backend.security import hash_password, limiter, password_hasher, safe_next, start_session, verify_password
+from backend.security import (after_login_destination, can_login, hash_password, limiter, password_hasher,
+                              safe_next, start_session, verify_password)
 from backend.users import DuplicateEmail, create_user, find_user_by_email, update_password_hash
 
 
@@ -14,7 +15,7 @@ auth = Blueprint("auth", __name__)
 def register():
     destination = safe_next(request.form.get("next", request.args.get("next")))
     if g.user:
-        return redirect(destination, code=303)
+        return redirect(after_login_destination(g.user, destination), code=303)
     form = RegisterForm()
     if form.validate_on_submit():
         try:
@@ -38,20 +39,20 @@ def register():
 def login():
     destination = safe_next(request.form.get("next", request.args.get("next")))
     if g.user:
-        return redirect(destination, code=303)
+        return redirect(after_login_destination(g.user, destination), code=303)
     form = LoginForm()
     error = None
     if form.validate_on_submit():
         user = find_user_by_email(form.email.data)
         stored_hash = user["hash_password"] if user else current_app.extensions["dummy_password_hash"]
         valid = verify_password(stored_hash, form.password.data)
-        if valid and user and user["stato_account"] == "attivo" and not user["data_cancellazione"]:
+        if valid and can_login(user):
             if not stored_hash.startswith("$argon2id$") or password_hasher.check_needs_rehash(stored_hash):
                 update_password_hash(user["id"], hash_password(form.password.data))
             start_session(user)
             flash("Accesso effettuato.", "success")
-            return redirect(destination, code=303)
-        # Non riveliamo se l'email esiste, se la password è errata o l'account è bloccato.
+            return redirect(after_login_destination(user, destination), code=303)
+        # Non riveliamo se l'email esiste, se la password è errata o l'account è cancellato.
         error = "Email o password non valide, oppure account non disponibile."
     status = 401 if error else (400 if request.method == "POST" else 200)
     return render_template("login.html", form=form, next_url=destination, error=error), status

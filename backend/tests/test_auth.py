@@ -69,16 +69,16 @@ def test_wrong_password_and_unknown_email_have_same_response(submit, logged_in, 
     assert message in known.get_data(as_text=True) and message in unknown.get_data(as_text=True)
 
 
-@pytest.mark.parametrize("status", ["bloccato", "cancellato"])
-def test_disabled_accounts_cannot_login(submit, logged_in, users_stub, registration, status):
+def test_deleted_accounts_cannot_login(submit, logged_in, users_stub, registration):
+    # Un account bannato invece entra in sola lettura: vedi test_ban.py.
     submit("/logout")
-    users_stub[registration["email"]]["stato_account"] = status
+    users_stub[registration["email"]]["stato_account"] = "cancellato"
     assert submit("/login", {"email": registration["email"],
                              "password": registration["password"]}).status_code == 401
 
 
 def test_existing_session_rechecks_user_status(client, logged_in, users_stub, registration):
-    users_stub[registration["email"]]["stato_account"] = "bloccato"
+    users_stub[registration["email"]]["stato_account"] = "cancellato"
     assert client.get("/reports/new").status_code == 303
     with client.session_transaction() as session:
         assert "user_id" not in session

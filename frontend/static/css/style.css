@@ -420,3 +420,24 @@ nav a:hover, .report-card a:hover, .moderation-row a:hover { text-decoration: un
 .ai-note { margin: 8px 0 0; padding: 8px 10px; border-left: 3px solid var(--primary); background: #f5f8f8; color: var(--primary-dark); font-size: .88rem; line-height: 1.4; }
 .category-tag-ai { border-style: dashed; }
 #suggest-categories { margin-top: 8px; }
+
+/* Ban: avviso in ogni pagina e form del profilo in sola lettura. */
+.ban-banner p { margin: 0 0 6px; }
+.ban-banner p:last-child { margin-bottom: 0; }
+.profile-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.profile-fieldset:disabled { opacity: .7; }
+
+/* Mappa della homepage: colori diversi per tipo, ma la legenda e il popup dicono sempre il tipo. */
+.map-panel { margin-bottom: 24px; }
+.home-map { min-height: 420px; }
+.map-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; list-style: none; margin: 0; padding: 0; font-size: .9rem; }
+.map-legend li { display: inline-flex; align-items: center; gap: 7px; }
+.legend-marker { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border); }
+.legend-segnalazione { background: #c2410c; }
+.legend-proposta { background: #1d4ed8; border-color: #1e293b; }
+.legend-count { color: var(--muted); }
+.legend-missing { color: var(--muted); }
+.map-popup h3 { margin: 0 0 6px; font-size: 1rem; }
+.map-popup p { margin: 0 0 8px; }
+.map-popup .badge { margin-bottom: 8px; }
+@media (max-width: 760px) { .home-map { min-height: 320px; } }

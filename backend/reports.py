@@ -6,7 +6,7 @@ from mysql.connector import IntegrityError
 
 from backend.repositories.reports import (
     add_comment, attachment_content, attachment_path, block_user, change_report_state, get_report_record,
-    list_moderation_reports, list_moderation_users, list_report_records,
+    list_map_items, list_moderation_reports, list_moderation_users, list_report_records,
     moderate_comment, moderate_report, moderate_reports, permanently_ban_user,
     report_comments, STATE_TRANSITIONS,
     set_support, unblock_user, user_supports, withdraw_report,
@@ -70,6 +70,12 @@ def get_reports():
         order, content_type=kind,
     )
     return jsonify(rows)
+
+
+@reports.get("/api/map-items")
+def map_items():
+    """Elementi leggeri per la mappa della homepage: id, tipo, coordinate, titolo, stato."""
+    return jsonify(list_map_items())
 
 
 @reports.get("/api/me/segnalazioni")

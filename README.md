@@ -15,6 +15,15 @@ commenti e sostegni sono salvati nel database.
   tendina (almeno una corrispondente) e stato; categorie come tag sulle schede.
 - Profilo con bio, quartiere di interesse, preferenza notifiche, avatar e cambio
   password verificato; modifica password invalida le altre sessioni.
+- Email personali reali: normalizzate (spazi, minuscole), univoche a livello DB e
+  modificabili dal profilo solo dopo la conferma tramite link al nuovo indirizzo.
+- «Hai dimenticato la password?»: link monouso con scadenza inviato per email,
+  risposta identica per indirizzi registrati e non, chiusura di tutte le sessioni.
+- Utenti bannati: possono accedere ma vedono solo la propria area con un avviso
+  (motivo e date) in ogni pagina; ogni scrittura risponde 403 lato server. Lo
+  sblocco vale dalla richiesta successiva; i ban temporanei scadono da soli.
+- Mappa in homepage con tutte le segnalazioni e proposte pubbliche, colori
+  diversi per tipo, legenda e popup con titolo, tipo, stato e link.
 - Pagina dedicata con mappa MapLibre/OpenFreeMap, ricerca indirizzo su richiesta, pin
   trascinabile, selezione di 1–5 categorie, coordinate e indirizzo salvati in
   MySQL; foto/video obbligatorio. I nuovi contenuti sono pubblici dopo
@@ -106,6 +115,17 @@ I risultati sono in `ANALISI_IA` (migrazione `008_ai_analysis.sql`, applicabile 
 `python -m backend.apply_ai_migration`). Su Vercel `localhost:11434` non esiste:
 l'IA funziona solo se l'app gira sulla stessa macchina di Ollama (altrimenti vale il
 comportamento senza IA). Il primo invio dopo l'avvio può essere lento per il caricamento dei modelli.
+
+## Email (reset password e cambio indirizzo)
+
+L'invio usa SMTP della libreria standard (`smtplib`, STARTTLS o TLS implicito)
+configurato con `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`,
+`MAIL_USE_TLS`/`MAIL_USE_SSL` e `MAIL_FROM`. Funziona con qualunque provider che
+offra SMTP (Resend, SendGrid, Mailgun, Brevo, il server della scuola…). Senza
+`MAIL_SERVER` le email sono salvate come file `.eml` in `storage/mail_outbox/`
+(ignorata da Git) e il log indica solo il percorso. Imposta `APP_BASE_URL` con
+l'indirizzo pubblico: i link non vengono mai costruiti dall'header `Host`.
+Su Vercel il filesystem non è scrivibile: in produzione configura sempre SMTP.
 
 ## Configurazione MySQL Aiven esistente
 
@@ -200,6 +220,10 @@ Le richieste che modificano dati richiedono il token CSRF nell'header
 | `POST /api/auth/logout` | Sessione | Uscita |
 | `GET/PATCH/DELETE /api/auth/me` | Sessione | Profilo e cancellazione logica |
 | `POST /api/auth/me/password`, `POST /api/auth/me/avatar` | Sessione | Password e immagine profilo |
+| `POST /api/auth/me/email` | Sessione | Chiede il cambio email: link di conferma al nuovo indirizzo |
+| `GET/POST /password/dimenticata`, `/password/reimposta/<token>` | Pubblico | Reset della password via email |
+| `GET/POST /email/conferma/<token>` | Link email | Conferma del nuovo indirizzo |
+| `GET /api/map-items` | Pubblico | Punti della mappa: id, tipo, lat/lng, titolo, stato |
 | `GET /api/geo/search`, `GET /api/geo/reverse` | Sessione | Geocodifica di Milano su richiesta |
 | `GET /api/quartieri`, `GET /api/categorie` | Pubblico | Cataloghi attivi |
 | `GET /api/segnalazioni` | Pubblico | Ricerca, filtri; `categoria` ripetibile; `?mie=1` richiede login |

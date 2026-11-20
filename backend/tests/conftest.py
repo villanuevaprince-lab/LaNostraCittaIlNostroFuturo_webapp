@@ -7,6 +7,7 @@ import pytest
 from backend.app import create_app
 from backend import database
 from backend.users import DuplicateEmail
+from test_database import fake_mysql  # noqa: F401  (fixture condivisa per i test che non la importano)
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +28,8 @@ def app(tmp_path, monkeypatch):
         "SESSION_COOKIE_SECURE": False,
         "UPLOAD_FOLDER": str(tmp_path / "uploads"),
         "AI_ENABLED": False,  # nessun test raggiunge Ollama; i test IA lo attivano esplicitamente
+        "MAIL_BACKEND": "memory",  # le email restano in app.extensions["mail_outbox"]
+        "APP_BASE_URL": "https://citta.example.org",
     })
 
 
@@ -92,8 +95,40 @@ def users_stub(monkeypatch):
         monkeypatch.setattr(module, "create_user", create_user)
         monkeypatch.setattr(module, "find_user_by_email", find_by_email)
         monkeypatch.setattr(module, "update_password_hash", update_hash)
+    def reset_hash(user_id, previous_hash, new_hash):
+        user = next((user for user in users.values() if user["id"] == user_id), None)
+        if not user or user["hash_password"] != previous_hash or user["stato_account"] not in {"attivo", "bloccato"}:
+            return False
+        user["hash_password"] = new_hash
+        user["session_version"] = user.get("session_version", 0) + 1
+        return True
+
+    def change_email(user_id, previous_email, new_email):
+        if new_email in users:
+            raise DuplicateEmail()
+        user = users.get(previous_email)
+        if not user or user["id"] != user_id or user["stato_account"] != "attivo":
+            return False
+        user["email"] = new_email
+        users[new_email] = users.pop(previous_email)
+        return True
+
+    from backend import account
+    monkeypatch.setattr(account, "find_user_by_email", find_by_email)
+    monkeypatch.setattr(account, "find_user_by_id", find_by_id)
+    monkeypatch.setattr(account, "reset_password_hash", reset_hash)
+    monkeypatch.setattr(account, "change_email", change_email)
+
+    def expire(user_id, block_id):
+        user = next(user for user in users.values() if user["id"] == user_id)
+        user["stato_account"], user["ban_info"] = "attivo", None
+        return True
+
     monkeypatch.setattr(security, "find_user_by_id", find_by_id)
     monkeypatch.setattr(security, "has_role", lambda user_id, role="moderatore": False)
+    # Il ban attivo vive nella chiave "ban_info" dell'utente fittizio.
+    monkeypatch.setattr(security, "find_active_ban", lambda user_id: (find_by_id(user_id) or {}).get("ban_info"))
+    monkeypatch.setattr(security, "expire_ban", expire)
     return users
 
 

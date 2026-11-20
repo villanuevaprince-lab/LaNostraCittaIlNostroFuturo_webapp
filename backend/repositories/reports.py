@@ -543,3 +543,27 @@ def list_active_users(exclude_user_id=None):
             FROM UTENTE WHERE StatoAccount='attivo' AND (%s IS NULL OR IdUtente <> %s)
             ORDER BY Cognome, Nome LIMIT 200""", (exclude_user_id, exclude_user_id))
         return cursor.fetchall()
+
+
+MAP_ITEMS_LIMIT = 5000
+
+
+def list_map_items(limit=MAP_ITEMS_LIMIT):
+    """Punti della mappa pubblica: solo i campi necessari, niente testi lunghi o autori.
+
+    I contenuti pubblici senza coordinate non sono un errore: vengono solo contati.
+    """
+    public = "s.Visibilita = 'pubblica' AND s.duplicate_of_id IS NULL"
+    with database_cursor() as cursor:
+        cursor.execute(f"""SELECT s.IdSegnalazione AS id, s.Tipo AS tipo, s.Titolo AS titolo, s.Stato AS stato,
+                s.Latitudine AS lat, s.Longitudine AS lng
+            FROM SEGNALAZIONE s
+            WHERE {public} AND s.Latitudine IS NOT NULL AND s.Longitudine IS NOT NULL
+            ORDER BY s.IdSegnalazione DESC LIMIT %s""", (limit + 1,))
+        rows = cursor.fetchall()
+        cursor.execute(f"""SELECT COUNT(*) AS totale FROM SEGNALAZIONE s
+            WHERE {public} AND (s.Latitudine IS NULL OR s.Longitudine IS NULL)""")
+        missing = cursor.fetchone()["totale"]
+    items = [{"id": row["id"], "tipo": row["tipo"], "titolo": row["titolo"], "stato": row["stato"],
+              "lat": float(row["lat"]), "lng": float(row["lng"])} for row in rows[:limit]]
+    return {"items": items, "senza_coordinate": int(missing or 0), "troncato": len(rows) > limit}

@@ -90,6 +90,29 @@ di geocodifica. Le richieste di ricerca sono effettuate solo dopo un'azione
 esplicita dell'utente e sono limitate; per molti utenti configura un servizio
 di geocoding/tile dedicato.
 
+### Email: reset password e cambio indirizzo
+
+Per inviare davvero le email configura un server SMTP (qualunque provider che offra
+SMTP, ad esempio Resend, SendGrid, Mailgun o Brevo):
+
+```dotenv
+MAIL_SERVER=smtp.tuo-provider.example
+MAIL_PORT=587
+MAIL_USERNAME=utente-smtp
+MAIL_PASSWORD=password-o-api-key-smtp
+MAIL_USE_TLS=true
+MAIL_USE_SSL=false
+MAIL_FROM=La Nostra Città <noreply@tuodominio.example>
+APP_BASE_URL=https://indirizzo-pubblico-dell-app.example
+PASSWORD_RESET_MAX_AGE=1800
+EMAIL_CHANGE_MAX_AGE=3600
+```
+
+In sviluppo, senza `MAIL_SERVER`, ogni email è salvata come file `.eml` in
+`storage/mail_outbox/` (apribile con un client di posta); il log mostra solo il
+percorso, non il link. `APP_BASE_URL` è obbligatorio in produzione: i link
+inviati per email usano solo questo valore.
+
 ### IA locale con Ollama (facoltativa)
 
 Installa Ollama sulla stessa macchina dell'app e scarica i modelli:
@@ -138,6 +161,11 @@ Se il database contiene solo le tabelle iniziali, applica nell'ordine:
 4. `database/migrations/004_civic_features.sql`
 5. `database/migrations/005_shared_attachment_content.sql`
 6. `database/migrations/008_ai_analysis.sql` (dopo 006 e 007; oppure `python -m backend.apply_ai_migration`)
+7. `database/migrations/009_user_email_normalized.sql` con `python -m backend.apply_email_migration`:
+   lo script si ferma se la normalizzazione (trim, minuscole) creerebbe email duplicate
+   o se esistono indirizzi senza `@`, poi imposta la collation `utf8mb4_0900_ai_ci` e il
+   vincolo `chk_utente_email_normalizzata`. Su un database creato dallo schema 001
+   aggiornato risulta già applicata.
 
 Le migrazioni non sono completamente idempotenti: **non rilanciarle** se le
 colonne, gli indici o i trigger sono già presenti. In particolare la 004 deve

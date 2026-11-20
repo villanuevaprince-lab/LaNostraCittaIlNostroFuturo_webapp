@@ -37,7 +37,7 @@ Svuota la sessione e risponde `{"ok": true, "redirect": "/"}`.
 
 Richiedono sessione. Il `PATCH` accetta `nome`, `cognome`, `quartiere_id`,
 `bio` (massimo 500 caratteri) e `notifiche_email` (booleano);
-l'email non è modificabile da questo endpoint. La cancellazione è logica:
+l'email si cambia con `POST /api/auth/me/email` (sotto). La cancellazione è logica:
 imposta stato `cancellato`, registra l'evento e termina il cookie corrente.
 
 `POST /api/auth/me/password` richiede JSON `password_attuale`,
@@ -47,6 +47,45 @@ sessioni decadono alla richiesta successiva. Limite 5 tentativi/ora.
 `POST /api/auth/me/avatar` riceve multipart `avatar` (JPEG/PNG/WebP, max 2 MB),
 risalva senza EXIF in WebP su `UPLOAD_FOLDER/avatars`; `GET /api/auth/avatar/<id>`
 serve l'immagine.
+
+### Cambio email
+
+`POST /api/auth/me/email` (sessione, CSRF, 5/ora) riceve JSON `nuova_email` e
+`password` (password attuale). L'indirizzo viene normalizzato (trim, minuscole) e
+validato. Se è libero, al nuovo indirizzo arriva un link `/email/conferma/<token>`
+valido `EMAIL_CHANGE_MAX_AGE` secondi (default 3600); se è già usato non parte
+nessuna email, ma la risposta è identica (`200 {ok, message}`), così l'endpoint
+non rivela quali indirizzi sono registrati. `GET` sul link mostra solo un
+pulsante; il `POST` aggiorna `UTENTE.Email` se l'indirizzo attuale coincide
+ancora con quello del token (monouso), registra `EVENTO_LOG`/`VARIAZIONE_LOG` e
+avvisa il vecchio indirizzo. Un conflitto con la UNIQUE risponde `409`.
+
+### Reset della password
+
+`GET/POST /password/dimenticata` (form HTML, CSRF; 5/minuto e 20/ora per IP,
+3/ora per indirizzo) risponde sempre con la stessa pagina e lo stesso codice
+`200`, registrato o no l'indirizzo. Se l'account esiste (attivo o bannato, non
+cancellato) parte un link `/password/reimposta/<token>`. Il token è firmato con
+`itsdangerous.URLSafeTimedSerializer` (`SECRET_KEY`, salt dedicato), scade dopo
+`PASSWORD_RESET_MAX_AGE` secondi (default 1800) e contiene un'impronta dell'hash
+attuale della password: dopo il reset l'impronta non corrisponde più, quindi il
+link è monouso. La pagina di reset chiede password e conferma (12–128 caratteri,
+come la registrazione), salva l'hash Argon2id con un aggiornamento condizionato
+all'hash precedente, incrementa `SessionVersion` (tutte le sessioni decadono),
+svuota la sessione corrente e invia un avviso. Le pagine con token rispondono con
+`Referrer-Policy: no-referrer`.
+
+### Utenti bannati
+
+Un account con `StatoAccount='bloccato'` può accedere; il redirect dopo il login
+porta a `/profilo`. A ogni richiesta `load_current_user` rilegge stato e ultimo
+blocco non revocato (`BLOCCO`): un blocco temporaneo scaduto viene chiuso e
+l'account riattivato automaticamente. Finché il ban è attivo, un `before_request`
+globale consente solo la lettura dell'area personale (`/profilo`, `/dashboard`,
+`/api/auth/me`, `/api/me/segnalazioni`, cataloghi, stati, allegati, avatar),
+il logout e il recupero password; ogni altra richiesta risponde `403`
+(`{"error": ..., "bannato": true}` per le API, pagina d'errore per l'HTML).
+`GET /api/auth/me` include `ban` con `motivo`, `data_inizio`, `data_fine`.
 
 ## Cataloghi e segnalazioni
 
@@ -187,10 +226,12 @@ e CSRF sulle mutazioni.
   `rimossa`, `pubblica`) e evento audit.
 - `DELETE /api/moderazione/commenti/<id>`: rende il commento `rimossa` e registra evento.
 - `POST /api/moderazione/utenti/<id>/blocco`: JSON `motivazione` obbligatoria e
-  `giorni` 1–365 o `null`; aggiorna `UTENTE`, `BLOCCO` ed evento.
+  `giorni` 1–365 o `null`; aggiorna `UTENTE`, `BLOCCO` ed evento. Vale dalla
+  richiesta successiva dell'utente, anche con una sessione già aperta.
 - `POST /api/moderazione/utenti/<id>/ban-permanente`: JSON `motivazione`
   obbligatoria, massimo 3000 caratteri. Revoca il blocco temporaneo corrente,
-  ne registra uno senza scadenza e disabilita l'accesso dell'utente; storico,
+  ne registra uno senza scadenza; l'utente può ancora accedere ma solo in sola lettura
+  della propria area (vedi «Utenti bannati»); storico,
   contenuti e relazioni restano conservati. Non cancella fisicamente l'account.
 - `POST /api/moderazione/utenti/<id>/sblocco`: JSON `motivazione` facoltativa;
   registra revoca e riattiva l'account.
@@ -202,6 +243,17 @@ definitivo. Blocco utenti moderatori non consentito;
 la revoca amministrativa può rimuovere anche un ban senza scadenza.
 
 ## Mappa
+
+`GET /api/map-items` (pubblico) restituisce i soli campi necessari alla mappa
+della homepage: `{items: [{id, tipo, lat, lng, titolo, stato}], senza_coordinate,
+troncato}`. Include i contenuti pubblici non uniti come duplicati, con
+`Latitudine` e `Longitudine` valorizzate (`DECIMAL(9,6)`, indice
+`idx_segnalazione_coordinate`), fino a 5000 elementi dal più recente
+(`troncato=true` se ce ne sono altri). Quelli senza coordinate non sono un
+errore: sono contati in `senza_coordinate` e mostrati in legenda. Le coordinate
+vengono salvate alla creazione dal pin sulla mappa (clic o trascinamento),
+dalla ricerca di un indirizzo geocodificato oppure dal GPS EXIF della foto, e
+sono sempre validate sul server entro l'area di Milano.
 
 `GET /api/geo/search?q=<indirizzo>` e `/api/geo/reverse?lat=<numero>&lng=<numero>`
 richiedono login e sono limitati globalmente (1 richiesta/s, 1000/giorno nello
